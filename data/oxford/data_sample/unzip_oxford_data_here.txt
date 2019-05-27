@@ -1,0 +1,2 @@
+unzip data from oxford robotcar dataset to this directory
+Use eg "large sample" data from here: https://robotcar-dataset.robots.ox.ac.uk/downloads/
