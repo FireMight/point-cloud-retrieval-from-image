@@ -54,3 +54,8 @@ docs/_build/
 # Mac OS DS files
 .DS_Store
 
+# Ignore data files
+*.png
+*.bin
+*.yaml
+*.rawpcl
