@@ -54,18 +54,14 @@ if __name__ == "__main__":
             
     # Create transformation matrix and transform pcl from vehicle-fixed to NED
     import transform as sdk_trafo
-    state_first_frame = ned_state[0:6,0]
+    state_first_frame = ned_state[:6,0]
     state_first_frame = state_first_frame.flatten()
     state_first_frame[3:6] *= -1
     trafo_veh_ned = sdk_trafo.build_se3_transform(state_first_frame)
-    pointcloud_ned = trafo_veh_ned @ pointcloud[0:4,:]
+    pointcloud_ned = trafo_veh_ned @ pointcloud[:4,:]
     
     # TODO Trajectory is somehow mirrored to PCL??
-    # TODO Split PCL every x meter of trajectory
     
-    if to_file:
-        pointcloud_ned.tofile('pcl/sample.rawpcl')
- 
     if plot:
         x = np.ravel(pointcloud_ned[0, :])
         y = np.ravel(pointcloud_ned[1, :])
@@ -102,6 +98,16 @@ if __name__ == "__main__":
         ax.set_zlim(-z_range[1], -z_range[0])
         ax.view_init(140, 0) # elevation, azimuth
         plt.show()
+    
+    
+    
+    # TODO Split PCL every x meter of trajectory
+    
+    
+    if to_file:
+        pointcloud_ned[:3,:].tofile('pcl/sample.rawpcl')
+ 
+    
 
     
     
