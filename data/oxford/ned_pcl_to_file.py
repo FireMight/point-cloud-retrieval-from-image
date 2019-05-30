@@ -54,11 +54,10 @@ if __name__ == "__main__":
             
     # Create transformation matrix and transform pcl from vehicle-fixed to NED
     import transform as sdk_trafo
-    state_first_frame = ned_state[:6,0]
+    state_first_frame = trajectory_ned[:6,0]
     state_first_frame = state_first_frame.flatten()
-    state_first_frame[3:6] *= -1
     trafo_veh_ned = sdk_trafo.build_se3_transform(state_first_frame)
-    pointcloud_ned = trafo_veh_ned @ pointcloud[:4,:]
+    pointcloud_ned = trafo_veh_ned @ pointcloud[:,:]
     
     # TODO Trajectory is somehow mirrored to PCL??
     

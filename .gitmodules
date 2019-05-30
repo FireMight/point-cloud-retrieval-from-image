@@ -1,3 +1,7 @@
 [submodule "data_oxford/robotcar-dataset-sdk"]
 	path = data_oxford/robotcar-dataset-sdk
 	url = https://github.com/ori-mrg/robotcar-dataset-sdk
+[submodule "pytorch-NetVlad"]
+	path = pytorch-NetVlad
+	url = https://github.com/Nanne/pytorch-NetVlad.git
+
