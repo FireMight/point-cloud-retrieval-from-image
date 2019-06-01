@@ -2,7 +2,7 @@
 	path = data_oxford/robotcar-dataset-sdk
 	url = https://github.com/ori-mrg/robotcar-dataset-sdk
 [submodule "pytorch-NetVlad"]
-	path = NetVLAD
+	path = netvlad
 	url = https://github.com/Nanne/pytorch-NetVlad.git
 
 [submodule "pointnet.pytorch"]
