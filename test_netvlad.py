@@ -6,9 +6,7 @@ import torch.nn as nn
 import torchvision
 import torchvision.models as models
 import matplotlib.pyplot as plt
-
-#this is also an import, a very ugly one, but an import non the less
-netvlad = import_module('pytorch-NetVlad.netvlad')
+import NetVLAD.netvlad as netvlad
 
 net_vlad_path = 'models/vgg16_netvlad_checkpoint/checkpoints/checkpoint.pth.tar'
 #TODO: would like to load only images from central camera, but torch expects images in subfolders, not root
