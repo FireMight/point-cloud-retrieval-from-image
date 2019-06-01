@@ -1,0 +1,2 @@
+Unzip NetVLAD model here
+Download link: https://drive.google.com/file/d/17luTjZFCX639guSVy00OUtzfTQo4AMF2/view
