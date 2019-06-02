@@ -4,7 +4,52 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 import sys
+from random import sample
 
+def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
+    x = np.ravel(pointcloud_ned[0, :])
+    y = np.ravel(pointcloud_ned[1, :])
+    z = np.ravel(pointcloud_ned[2, :])
+
+    xmin = x.min()
+    ymin = y.min()
+    zmin = z.min()
+    xmax = x.max()
+    ymax = y.max()
+    zmax = z.max()
+    xmid = (xmax + xmin) * 0.5
+    ymid = (ymax + ymin) * 0.5
+    zmid = (zmax + zmin) * 0.5
+
+    max_range = max(xmax - xmin, ymax - ymin, zmax - zmin)
+    x_range = [xmid - 0.5 * max_range, xmid + 0.5 * max_range]
+    y_range = [ymid - 0.5 * max_range, ymid + 0.5 * max_range]
+    z_range = [zmid - 0.5 * max_range, zmid + 0.5 * max_range]
+
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.set_aspect('equal')
+    
+    if reflectance is not None:
+        colours = (reflectance - reflectance.min()) / (reflectance.max() - reflectance.min())
+        colours = 1 / (1 + np.exp(-10 * (colours - colours.mean())))
+        ax.scatter(-y, -x, -z, marker=',', s=1, c=colours, cmap='gray', 
+               edgecolors='none')
+    else:
+        ax.scatter(-y, -x, -z, marker=',', s=1, c='gray',
+               edgecolors='none')
+    
+    if trajectory_ned is not None:
+        traj_x = np.ravel(trajectory_ned[0, :])
+        traj_y = np.ravel(trajectory_ned[1, :])
+        traj_z = np.ravel(trajectory_ned[2, :])
+        ax.scatter(-traj_y, -traj_x, -traj_z, marker=',', s=1, c='r')
+        
+    ax.set_xlim(-y_range[1], -y_range[0])
+    ax.set_ylim(-x_range[1], -x_range[0])
+    ax.set_zlim(-z_range[1], -z_range[0])
+    ax.view_init(140, 0) # elevation, azimuth
+    plt.show()
 
 if __name__ == "__main__":
     # Replace with arg parser later if required
@@ -14,6 +59,10 @@ if __name__ == "__main__":
     lidar_timestamp_file = 'data_sample/lms_front.timestamps'
     plot = True
     to_file = True
+    #what fraction of the down axis is considered ground
+    ground_frac = 0.1
+    subsample_size = 4096
+    submap_coverage = 25.0
     
     # Get start and end timestamp
     max_frames = 1000
@@ -59,52 +108,53 @@ if __name__ == "__main__":
     trafo_veh_ned = sdk_trafo.build_se3_transform(state_first_frame)
     pointcloud_ned = trafo_veh_ned @ pointcloud[:,:]
     
-    # TODO Trajectory is somehow mirrored to PCL??
-    
     if plot:
-        x = np.ravel(pointcloud_ned[0, :])
-        y = np.ravel(pointcloud_ned[1, :])
-        z = np.ravel(pointcloud_ned[2, :])
-        traj_x = np.ravel(trajectory_ned[0, :])
-        traj_y = np.ravel(trajectory_ned[1, :])
-        traj_z = np.ravel(trajectory_ned[2, :])
-        colours = (reflectance - reflectance.min()) / (reflectance.max() - reflectance.min())
-        colours = 1 / (1 + np.exp(-10 * (colours - colours.mean())))
-    
-        xmin = x.min()
-        ymin = y.min()
-        zmin = z.min()
-        xmax = x.max()
-        ymax = y.max()
-        zmax = z.max()
-        xmid = (xmax + xmin) * 0.5
-        ymid = (ymax + ymin) * 0.5
-        zmid = (zmax + zmin) * 0.5
-    
-        max_range = max(xmax - xmin, ymax - ymin, zmax - zmin)
-        x_range = [xmid - 0.5 * max_range, xmid + 0.5 * max_range]
-        y_range = [ymid - 0.5 * max_range, ymid + 0.5 * max_range]
-        z_range = [zmid - 0.5 * max_range, zmid + 0.5 * max_range]
-    
-        fig = plt.figure()
-        ax = fig.gca(projection='3d')
-        ax.set_aspect('equal')
-        ax.scatter(-y, -x, -z, marker=',', s=1, c=colours, cmap='gray', 
-                   edgecolors='none')
-        ax.scatter(-traj_y, -traj_x, -traj_z, marker=',', s=1, c='r')
-        ax.set_xlim(-y_range[1], -y_range[0])
-        ax.set_ylim(-x_range[1], -x_range[0])
-        ax.set_zlim(-z_range[1], -z_range[0])
-        ax.view_init(140, 0) # elevation, azimuth
-        plt.show()
-    
-    
-    
-    # TODO Split PCL every x meter of trajectory
-    
+        plot_pcl_traj(pointcloud_ned,reflectance,trajectory_ned)
     
     if to_file:
-        pointcloud_ned[:3,:].tofile('pcl/sample.rawpcl')
+        dist_to_next = submap_coverage/2
+        prev_pos = trajectory_ned[[0,1,2],0]
+        #TODO: check units - are point cloud coordinates given in meters
+        #walk along trajectory, sample every submap_coverage units traveled
+        for i in range(1,trajectory_ned.shape[1]):
+            curr_pos = trajectory_ned[[0,1,2],i]
+            dist_to_next = dist_to_next - np.linalg.norm(prev_pos - curr_pos)
+            prev_pos=curr_pos
+            if dist_to_next<=0:
+                dist_to_next=submap_coverage
+                
+                #create submap centered at this location
+                box_min = curr_pos - submap_coverage/2
+                box_max = curr_pos + submap_coverage/2
+                mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
+                    np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
+                submap = pointcloud_ned[:3,mask]
+                
+                #TODO: rudimentary ground removal. replace with SAC removal later
+                down_coord = np.array(submap[2,:]).squeeze()
+                rng = max(down_coord) - min(down_coord)
+                ground_thresh = max(down_coord)-rng*ground_frac
+                submap = submap[:,down_coord<ground_thresh]
+                
+                #if submap doesn't contain enough points, skip to next submap;
+                #this shouldn't happen, warn if it does
+                if submap.shape[1]<3*subsample_size:
+                    print("No submap for pos {} generated, point cloud density too low", np.array(curr_pos).flatten())
+                    continue
+                
+                #TODO: randomly sample 4K points, replace with voxel grid filter
+                subsample = sample(list(range(submap.shape[1])),subsample_size)
+                submap = submap[:,subsample]
+                
+                #center and rescale to the range [-1,1]
+                submap[0,:]=submap[0,:]-curr_pos[0]
+                submap[1,:]=submap[1,:]-curr_pos[1]
+                submap[2,:]=submap[2,:]-curr_pos[2]
+                submap = submap/(submap_coverage/2)
+                plot_pcl_traj(submap)
+                #for now use approximate coordinates of point cloud as file name
+                #maybe store exact coordinates in a different file and change file name later
+                submap.tofile('pcl/{}_{}_{}.rawpcl'.format(int(curr_pos[0]),int(curr_pos[1]),int(curr_pos[2])))
  
     
 
