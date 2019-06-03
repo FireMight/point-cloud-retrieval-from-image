@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sys
 from random import sample
+from datetime import datetime
 
 def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     x = np.ravel(pointcloud_ned[0, :])
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     submap_coverage = 25.0
     
     # Get start and end timestamp
-    max_frames = 1000
+    max_frames = 1e9
     with open(lidar_timestamp_file) as ts_file:
         start_time = int(next(ts_file).split(' ')[0])
         for it, end_time in enumerate(ts_file):
@@ -112,20 +113,47 @@ if __name__ == "__main__":
         plot_pcl_traj(pointcloud_ned,reflectance,trajectory_ned)
     
     if to_file:
-        dist_to_next = submap_coverage/2
+        dist_to_next = submap_coverage
         prev_pos = trajectory_ned[[0,1,2],0]
+        segment_center_pos = None
+        i_start = 0 # Index of the start of each segment
+        segment_idx = 0
+        date_of_run = datetime.utcfromtimestamp(
+            trajectory_ned[6,0]*1e-6).strftime('%Y-%m-%d')
+        metadata_csv = 'pcl/segments_metadata_{}.csv'.format(date_of_run)
+        metadata_fieldnames = ['seg_idx', 
+                               'timestamp_start', 
+                               'timestamp_end',
+                               'northing_start',
+                               'easting_start',
+                               'down_start',
+                               'northing_end',
+                               'easting_end',
+                               'down_end',
+                               'heading_start',
+                               'heading_end']
+            
+        # Create csv file containing metadata for all segments
+        with open(metadata_csv, 'w') as outcsv:
+            writer = csv.DictWriter(outcsv, metadata_fieldnames)
+            writer.writeheader()
+        
         #TODO: check units - are point cloud coordinates given in meters
         #walk along trajectory, sample every submap_coverage units traveled
         for i in range(1,trajectory_ned.shape[1]):
             curr_pos = trajectory_ned[[0,1,2],i]
             dist_to_next = dist_to_next - np.linalg.norm(prev_pos - curr_pos)
             prev_pos=curr_pos
+            
+            # Save center point when half of the distance is travelled
+            if dist_to_next<=submap_coverage/2 and segment_center_pos is None:
+                segment_center_pos = curr_pos
+            
+            # Split trajectory when full distance is travelled
             if dist_to_next<=0:
-                dist_to_next=submap_coverage
-                
-                #create submap centered at this location
-                box_min = curr_pos - submap_coverage/2
-                box_max = curr_pos + submap_coverage/2
+                #create submap around center point
+                box_min = segment_center_pos - submap_coverage/2
+                box_max = segment_center_pos + submap_coverage/2
                 mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
                     np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
                 submap = pointcloud_ned[:3,mask]
@@ -139,7 +167,7 @@ if __name__ == "__main__":
                 #if submap doesn't contain enough points, skip to next submap;
                 #this shouldn't happen, warn if it does
                 if submap.shape[1]<3*subsample_size:
-                    print("No submap for pos {} generated, point cloud density too low", np.array(curr_pos).flatten())
+                    print("No submap for pos {} generated, point cloud density too low", np.array(segment_center_pos).flatten())
                     continue
                 
                 #TODO: randomly sample 4K points, replace with voxel grid filter
@@ -147,15 +175,40 @@ if __name__ == "__main__":
                 submap = submap[:,subsample]
                 
                 #center and rescale to the range [-1,1]
-                submap[0,:]=submap[0,:]-curr_pos[0]
-                submap[1,:]=submap[1,:]-curr_pos[1]
-                submap[2,:]=submap[2,:]-curr_pos[2]
+                submap[0,:]=submap[0,:]-segment_center_pos[0]
+                submap[1,:]=submap[1,:]-segment_center_pos[1]
+                submap[2,:]=submap[2,:]-segment_center_pos[2]
                 submap = submap/(submap_coverage/2)
-                plot_pcl_traj(submap)
-                #for now use approximate coordinates of point cloud as file name
-                #maybe store exact coordinates in a different file and change file name later
-                submap.tofile('pcl/{}_{}_{}.rawpcl'.format(int(curr_pos[0]),int(curr_pos[1]),int(curr_pos[2])))
+
+                submap.tofile('pcl/oxford_{}_{}.rawpcl'.format(date_of_run, segment_idx))
  
+                #Save metadata of all pointcloud files to csv
+                with open(metadata_csv, 'a') as outcsv:
+                    writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
+                    writer.writerow({'seg_idx' : segment_idx, 
+                                     'timestamp_start' : trajectory_ned[6,i_start], 
+                                     'timestamp_end' : trajectory_ned[6,i],
+                                     'northing_start' : trajectory_ned[0,i_start],
+                                     'easting_start' : trajectory_ned[1,i_start],
+                                     'down_start' : trajectory_ned[2,i_start],
+                                     'northing_end' : trajectory_ned[0,i],
+                                     'easting_end' : trajectory_ned[1,i],
+                                     'down_end' : trajectory_ned[2,i],
+                                     'heading_start' : trajectory_ned[5,i_start],
+                                     'heading_end' : trajectory_ned[5,i]})
+                
+                if plot:
+                    trajectory_rescaled = trajectory_ned[:,i_start:i]
+                    trajectory_rescaled[0,:] = trajectory_rescaled[0,:] - segment_center_pos[0]
+                    trajectory_rescaled[1,:] = trajectory_rescaled[1,:] - segment_center_pos[1]
+                    trajectory_rescaled[2,:] = trajectory_rescaled[2,:] - segment_center_pos[2]
+                    trajectory_rescaled[0:3,:] = trajectory_rescaled[0:3,:] / (submap_coverage/2)
+                    plot_pcl_traj(submap, trajectory_ned=trajectory_rescaled)
+
+                i_start = i+1
+                dist_to_next=submap_coverage
+                segment_center_pos = None
+                segment_idx += 1
     
 
     
