@@ -89,9 +89,9 @@ if __name__ == "__main__":
     with open(ins_data_file, 'r') as ins_file:
         reader = csv.DictReader(ins_file)
         for row in reader:
-            if float(row['timestamp']) > end_time:
+            if int(row['timestamp']) > end_time:
                 break
-            if float(row['timestamp']) < start_time:
+            if int(row['timestamp']) < start_time:
                 continue
             ned_state = np.array([float(row['northing']),
                                   float(row['easting']),
@@ -186,8 +186,8 @@ if __name__ == "__main__":
                 with open(metadata_csv, 'a') as outcsv:
                     writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
                     writer.writerow({'seg_idx' : segment_idx, 
-                                     'timestamp_start' : trajectory_ned[6,i_start], 
-                                     'timestamp_end' : trajectory_ned[6,i],
+                                     'timestamp_start' : int(trajectory_ned[6,i_start]), 
+                                     'timestamp_end' : int(trajectory_ned[6,i]),
                                      'northing_start' : trajectory_ned[0,i_start],
                                      'easting_start' : trajectory_ned[1,i_start],
                                      'down_start' : trajectory_ned[2,i_start],
