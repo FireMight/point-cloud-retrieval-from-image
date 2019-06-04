@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import csv
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -58,7 +60,7 @@ if __name__ == "__main__":
     extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
     lidar_dir = 'data_sample/lms_front'
     lidar_timestamp_file = 'data_sample/lms_front.timestamps'
-    plot = True
+    plot = False
     to_file = True
     #what fraction of the down axis is considered ground
     ground_frac = 0.1
@@ -158,6 +160,9 @@ if __name__ == "__main__":
                     np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
                 submap = pointcloud_ned[:3,mask]
                 
+                # Save raw pointcloud for preprocessing with PCL later
+                submap.tofile('pcl/oxford_{}_{}.rawpcl'.format(date_of_run, segment_idx))
+                
                 #TODO: rudimentary ground removal. replace with SAC removal later
                 down_coord = np.array(submap[2,:]).squeeze()
                 rng = max(down_coord) - min(down_coord)
@@ -180,7 +185,7 @@ if __name__ == "__main__":
                 submap[2,:]=submap[2,:]-segment_center_pos[2]
                 submap = submap/(submap_coverage/2)
 
-                submap.tofile('pcl/oxford_{}_{}.rawpcl'.format(date_of_run, segment_idx))
+                submap.tofile('pcl/oxford_{}_{}.pcl'.format(date_of_run, segment_idx))
  
                 #Save metadata of all pointcloud files to csv
                 with open(metadata_csv, 'a') as outcsv:

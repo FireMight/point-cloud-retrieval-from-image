@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import csv
 import os
 import sys
@@ -122,11 +124,12 @@ if __name__ == "__main__":
             #### TODO this does not work properly yet
             image_file = os.path.join(camera_dir, '{}.png'.format(int(camera_state[6])))
             image = sdk_image.load_image(image_file, model=camera_model)
-            #image = Image.fromarray(image)
+            image = Image.fromarray(image.astype('uint8'))
+            image = image.resize((320,240))
             
             # Save image and metadata
-            #image.save('img/oxford_{}_{}_{}.png'.format(
-            #    date_of_run,int(seg_start[4]),img_idx), 'PNG')
+            image.save('img/oxford_{}_{}_{}.png'.format(
+                date_of_run,int(seg_start[4]),img_idx), 'PNG')
             
             with open(metadata_csv, 'a') as outcsv:
                 writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)

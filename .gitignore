@@ -59,6 +59,7 @@ docs/_build/
 *.png
 *.bin
 *.yaml
+*.pcl
 *.rawpcl
 *.timestamps
 *.csv
