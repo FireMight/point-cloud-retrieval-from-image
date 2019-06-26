@@ -8,6 +8,7 @@ import os
 import sys
 from random import sample
 from datetime import datetime
+from scipy.spatial.transform import Rotation
 
 def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     x = np.ravel(pointcloud_ned[0, :])
@@ -53,20 +54,10 @@ def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     ax.set_zlim(-z_range[1], -z_range[0])
     ax.view_init(140, 0) # elevation, azimuth
     plt.show()
-
-if __name__ == "__main__":
-    # Replace with arg parser later if required
-    ins_data_file = 'data_sample/gps/ins.csv'
-    extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
-    lidar_dir = 'data_sample/lms_front'
-    lidar_timestamp_file = 'data_sample/lms_front.timestamps'
-    plot = False
-    to_file = True
-    #what fraction of the down axis is considered ground
-    ground_frac = 0.1
-    subsample_size = 4096
-    submap_coverage = 25.0
     
+
+def import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, ins_data_file, 
+                              extrinsics_dir='robotcar-dataset-sdk/extrinsics'):
     # Get start and end timestamp
     max_frames = 1e9
     with open(lidar_timestamp_file) as ts_file:
@@ -83,8 +74,8 @@ if __name__ == "__main__":
     
     # Calculate point cloud relative to start frame of trajectory
     pointcloud, reflectance = sdk_pcl.build_pointcloud(lidar_dir, ins_data_file,  
-                                             extrinsics_dir, start_time, 
-                                             end_time)
+                                                       extrinsics_dir, start_time, 
+                                                       end_time)
     
     # Get trajectory corresponding to LIDAR data
     trajectory_ned = np.empty((7,0))
@@ -103,7 +94,7 @@ if __name__ == "__main__":
                                   float(row['yaw']),
                                   int(row['timestamp'])]).reshape(7,1)
             trajectory_ned = np.append(trajectory_ned, ned_state, axis=1)
-            
+    
     # Create transformation matrix and transform pcl from vehicle-fixed to NED
     import transform as sdk_trafo
     state_first_frame = trajectory_ned[:6,0]
@@ -111,13 +102,80 @@ if __name__ == "__main__":
     trafo_veh_ned = sdk_trafo.build_se3_transform(state_first_frame)
     pointcloud_ned = trafo_veh_ned @ pointcloud[:,:]
     
+    return trajectory_ned, pointcloud_ned, reflectance
+
+
+def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage, 
+                    alignment='north_east', width=None, reflectance=None):
+    # Get center position on trajectory
+    center_pos = trajectory_ned[[0,1,2], center_idx]  
+    
+    if alignment == 'north_east':
+        # Get all points with north and east coordinate within coverage/2
+        box_min = center_pos - coverage/2
+        box_max = center_pos + coverage/2
+        mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
+            np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
+        pcl_segment = pointcloud_ned[:3,mask]
+    
+    elif alignment == 'trajectory':        
+        # Bounding box length in trajectory direction, optional width orthogonal
+        center_heading = trajectory_ned[5, center_idx]
+        
+        # Rotate pointcloud into bounding box reference system (probably not the
+        # most efficient way to do it though...)
+        R_z = Rotation.from_euler('z', -center_heading)
+        pcl_trafo = R_z.as_dcm() @ (pointcloud_ned[:3,:] - center_pos.reshape(3,1))
+        
+        # Get extend of bounding box
+        if width is None:
+            width = coverage
+        box_max = np.array([coverage/2, width/2, 0])
+        box_min = -1 * box_max
+        
+        mask = np.array(np.logical_and(np.logical_and(pcl_trafo[0,:]>=box_min[0],pcl_trafo[0,:]<box_max[0]),
+            np.logical_and(pcl_trafo[1,:]>=box_min[1], pcl_trafo[1,:]<box_max[1]))).squeeze()
+
+        
+        # Get segment from untransformed PCL
+        pcl_segment = pointcloud_ned[:3,mask]
+    
+    else:
+        raise ValueError('Wrong bounding box alignment specified: ' + alignment)
+    
+    reflectance_segment = None
+    if reflectance is not None:
+        reflectance_segment = reflectance[mask]
+    
+    return pcl_segment, reflectance_segment
+    
+    
+
+if __name__ == "__main__":
+    # Replace with arg parser later if required
+    ins_data_file = 'data_sample/gps/ins.csv'
+    lidar_dir = 'data_sample/lms_front'
+    lidar_timestamp_file = 'data_sample/lms_front.timestamps'
+    plot = True
+    to_file = True
+    #what fraction of the down axis is considered ground
+    ground_frac = 0.1
+    subsample_size = 4096
+    submap_coverage = 25.0
+    
+    data_ned = import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, 
+                                         ins_data_file)
+    trajectory_ned, pointcloud_ned, reflectance = (data_ned[0], data_ned[1], 
+                                                   data_ned[2])
+    
+    
     if plot:
         plot_pcl_traj(pointcloud_ned,reflectance,trajectory_ned)
     
     if to_file:
         dist_to_next = submap_coverage
         prev_pos = trajectory_ned[[0,1,2],0]
-        segment_center_pos = None
+        segment_center_idx = None
         i_start = 0 # Index of the start of each segment
         segment_idx = 0
         date_of_run = datetime.utcfromtimestamp(
@@ -148,17 +206,13 @@ if __name__ == "__main__":
             prev_pos=curr_pos
             
             # Save center point when half of the distance is travelled
-            if dist_to_next<=submap_coverage/2 and segment_center_pos is None:
-                segment_center_pos = curr_pos
+            if dist_to_next<=submap_coverage/2 and segment_center_idx is None:
+                segment_center_idx = i
             
             # Split trajectory when full distance is travelled
             if dist_to_next<=0:
-                #create submap around center point
-                box_min = segment_center_pos - submap_coverage/2
-                box_max = segment_center_pos + submap_coverage/2
-                mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
-                    np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
-                submap = pointcloud_ned[:3,mask]
+                submap, _ = get_pcl_segment(trajectory_ned, pointcloud_ned, 
+                                            segment_center_idx, submap_coverage)
                 
                 # Save raw pointcloud for preprocessing with PCL later
                 submap.tofile('pcl/oxford_{}_{}.rawpcl'.format(date_of_run, segment_idx))
@@ -180,6 +234,7 @@ if __name__ == "__main__":
                 submap = submap[:,subsample]
                 
                 #center and rescale to the range [-1,1]
+                segment_center_pos = trajectory_ned[[0,1,2], segment_center_idx]
                 submap[0,:]=submap[0,:]-segment_center_pos[0]
                 submap[1,:]=submap[1,:]-segment_center_pos[1]
                 submap[2,:]=submap[2,:]-segment_center_pos[2]
