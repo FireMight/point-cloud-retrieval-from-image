@@ -109,6 +109,7 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
                     alignment='north_east', width=None, reflectance=None):
     # Get center position on trajectory
     center_pos = trajectory_ned[[0,1,2], center_idx]  
+    reflectance_segment = None
     
     if alignment == 'north_east':
         # Get all points with north and east coordinate within coverage/2
@@ -117,35 +118,45 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
         mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
             np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
         pcl_segment = pointcloud_ned[:3,mask]
+        
+        if reflectance is not None:
+            reflectance_segment = reflectance[mask]
     
     elif alignment == 'trajectory':        
         # Bounding box length in trajectory direction, optional width orthogonal
         center_heading = trajectory_ned[5, center_idx]
         
-        # Rotate pointcloud into bounding box reference system (probably not the
-        # most efficient way to do it though...)
-        R_z = Rotation.from_euler('z', -center_heading)
-        pcl_trafo = R_z.as_dcm() @ (pointcloud_ned[:3,:] - center_pos.reshape(3,1))
-        
-        # Get extend of bounding box
+        # Consider different width if specified, else use quadratic box
         if width is None:
             width = coverage
+        
+        # Only considere points within certain range of the center point
+        r_max = np.sqrt(pow(coverage/2, 2) + pow(width/2, 2))
+        r = np.linalg.norm(pointcloud_ned[:2,:] - center_pos[:2].reshape(2,1), 
+                           axis=0)
+        pcl_limited = pointcloud_ned[:3, r < r_max]
+        
+        # Rotate pointcloud into bounding box reference system. 
+        R_z = Rotation.from_euler('z', -center_heading)
+        pcl_trafo = R_z.as_dcm() @ (pcl_limited - center_pos.reshape(3,1))
+        
+        # Get extend of bounding box
         box_max = np.array([coverage/2, width/2, 0])
         box_min = -1 * box_max
         
         mask = np.array(np.logical_and(np.logical_and(pcl_trafo[0,:]>=box_min[0],pcl_trafo[0,:]<box_max[0]),
             np.logical_and(pcl_trafo[1,:]>=box_min[1], pcl_trafo[1,:]<box_max[1]))).squeeze()
 
-        
         # Get segment from untransformed PCL
-        pcl_segment = pointcloud_ned[:3,mask]
+        pcl_segment = pcl_limited[:,mask]
+        
+        if reflectance is not None:
+            reflectance_limited = reflectance[r < r_max]
+            reflectance_segment = reflectance_limited[mask]
     
     else:
         raise ValueError('Wrong bounding box alignment specified: ' + alignment)
     
-    reflectance_segment = None
-    if reflectance is not None:
-        reflectance_segment = reflectance[mask]
     
     return pcl_segment, reflectance_segment
     

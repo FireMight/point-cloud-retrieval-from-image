@@ -17,10 +17,10 @@ if __name__ == "__main__":
                                                    data_ned[2])
     
     # Pick "random sample" (roughly in the middle of the segment for testing)
-    sample_idx = 400
+    center_idx = 400
     
     submap, reflectance_seg = get_pcl_segment(trajectory_ned, pointcloud_ned, 
-                                              sample_idx, 20, alignment='trajectory',
+                                              center_idx, 20, alignment='trajectory',
                                               width=50, reflectance=reflectance)
     
     plot_pcl_traj(submap, reflectance=reflectance_seg)
