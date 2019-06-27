@@ -9,9 +9,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from PIL import Image
 
+# Import image rectification and debayering from SDK
+sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
+import image as sdk_image
+from camera_model import CameraModel
 
 
-def get_camera_timestamp(ins_timestamp, camera_timestamps, start_idx):
+def get_closest_camera_timestamp(ins_timestamp, camera_timestamps, start_idx):
     min_diff = 1e9
     i_min = start_idx
     for i in range(start_idx, camera_timestamps.shape[0]):
@@ -25,15 +29,8 @@ def get_camera_timestamp(ins_timestamp, camera_timestamps, start_idx):
         
     return camera_timestamps[i_min], i_min
 
-
-if __name__ == "__main__":
-    models_dir = 'robotcar-dataset-sdk/models'
-    camera_dir = 'data_sample/stereo/centre'
-    camera_timestamp_file = 'data_sample/stereo.timestamps'
-    ins_data_file = 'data_sample/gps/ins.csv'
-    ref_trajectory_file = 'pcl/segments_metadata_2014-12-12.csv'
-    plot = False
-    
+def import_camera_trajectory(camera_timestamp_file, ins_data_file, camera_dir,
+                             models_dir = 'robotcar-dataset-sdk/models'):
     # Get timestamps from camera data
     camera_timestamps = np.genfromtxt(camera_timestamp_file)
     camera_timestamps = camera_timestamps[:,0].flatten()
@@ -53,7 +50,7 @@ if __name__ == "__main__":
                 continue
             
             # Get closest corresponding camera timestamp
-            timestamp, camera_timestamp_idx = get_camera_timestamp(
+            timestamp, camera_timestamp_idx = get_closest_camera_timestamp(
                 int(row['timestamp']), camera_timestamps, camera_timestamp_idx)
             
             camera_state = np.array([float(row['northing']),
@@ -64,6 +61,36 @@ if __name__ == "__main__":
                                      float(row['yaw']),
                                      timestamp]).reshape(7,1)
             camera_trajectory = np.append(camera_trajectory, camera_state, axis=1)
+    
+    # Import image rectification and debayering from SDK
+    camera_model = CameraModel(models_dir, camera_dir)
+    
+    return camera_trajectory, camera_model
+
+def load_image(camera_dir, timestamp, camera_model, size=None):
+    image_file = os.path.join(camera_dir, '{}.png'.format(int(timestamp)))
+    image = sdk_image.load_image(image_file, model=camera_model)
+    
+    pil_image = Image.fromarray(image.astype('uint8'))
+    if size is not None:
+        pil_image = pil_image.resize(size)
+    
+    return image, pil_image
+
+
+if __name__ == "__main__":
+    camera_dir = 'data_sample/stereo/centre'
+    camera_timestamp_file = 'data_sample/stereo.timestamps'
+    ins_data_file = 'data_sample/gps/ins.csv'
+    ref_trajectory_file = 'pcl/segments_metadata_2014-12-12.csv'
+    plot = False
+    
+    # Get camera timestamps and model
+    camera_trajectory, camera_model = import_camera_trajectory(camera_timestamp_file, 
+                                                    ins_data_file, camera_dir)
+    
+    start_time = camera_trajectory[6,0]
+    end_time = camera_trajectory[6,-1]
     
     # Get trajectory corresponding to reference point cloud map
     ref_trajectory = np.empty((6,0))
@@ -99,12 +126,7 @@ if __name__ == "__main__":
     with open(metadata_csv, 'w') as outcsv:
         writer = csv.DictWriter(outcsv, metadata_fieldnames)
         writer.writeheader()
-    
-    # Import image rectification and debayering from SDK
-    sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
-    import image as sdk_image
-    from camera_model import CameraModel
-    camera_model = CameraModel(models_dir, camera_dir)
+
     
     # Save all images that are within a specified distance to the start point 
     # of a trajectory segment
@@ -121,15 +143,12 @@ if __name__ == "__main__":
             if dist > max_dist or head_diff > max_head_diff:
                 continue
             
-            #### TODO this does not work properly yet
-            image_file = os.path.join(camera_dir, '{}.png'.format(int(camera_state[6])))
-            image = sdk_image.load_image(image_file, model=camera_model)
-            image = Image.fromarray(image.astype('uint8'))
-            image = image.resize((320,240))
             
-            # Save image and metadata
-            image.save('img/oxford_{}_{}_{}.png'.format(
-                date_of_run,int(seg_start[4]),img_idx), 'PNG')
+            # Load image, save image and metadata
+            _, pil_image = load_image(camera_dir, camera_state[6], camera_model,
+                                      size=(320,240))
+            pil_image.save('img/oxford_{}_{}_{}.png'.format(
+                            date_of_run,int(seg_start[4]),img_idx), 'PNG')
             
             with open(metadata_csv, 'a') as outcsv:
                 writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
@@ -145,7 +164,7 @@ if __name__ == "__main__":
             img_idx += 1
                 
             if plot:
-                plt.imshow(image)
+                plt.imshow(pil_image)
                 plt.xlabel('Segment {}'.format(seg_start[4]))
                 plt.xticks([])
                 plt.yticks([])

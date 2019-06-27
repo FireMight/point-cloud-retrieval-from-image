@@ -8,7 +8,13 @@ import os
 import sys
 from random import sample
 from datetime import datetime
-from scipy.spatial.transform import Rotation
+
+from pcl_trafo import pcl_trafo
+
+# Import the point cloud builder from SDK
+sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
+import build_pointcloud as sdk_pcl
+
 
 def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     x = np.ravel(pointcloud_ned[0, :])
@@ -68,14 +74,10 @@ def import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, ins_data_file,
             continue
         end_time = int(end_time.split(' ')[0])
     
-    # Import the point cloud builder from SDK
-    sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
-    import build_pointcloud as sdk_pcl
-    
     # Calculate point cloud relative to start frame of trajectory
-    pointcloud, reflectance = sdk_pcl.build_pointcloud(lidar_dir, ins_data_file,  
-                                                       extrinsics_dir, start_time, 
-                                                       end_time)
+    pcl_veh, reflectance = sdk_pcl.build_pointcloud(lidar_dir, ins_data_file,  
+                                                    extrinsics_dir, start_time, 
+                                                    end_time)
     
     # Get trajectory corresponding to LIDAR data
     trajectory_ned = np.empty((7,0))
@@ -96,13 +98,12 @@ def import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, ins_data_file,
             trajectory_ned = np.append(trajectory_ned, ned_state, axis=1)
     
     # Create transformation matrix and transform pcl from vehicle-fixed to NED
-    import transform as sdk_trafo
     state_first_frame = trajectory_ned[:6,0]
     state_first_frame = state_first_frame.flatten()
-    trafo_veh_ned = sdk_trafo.build_se3_transform(state_first_frame)
-    pointcloud_ned = trafo_veh_ned @ pointcloud[:,:]
+    pcl_ned = pcl_trafo(pcl_veh, trans_newref=state_first_frame[:3], 
+                        rot=state_first_frame[3:])
     
-    return trajectory_ned, pointcloud_ned, reflectance
+    return trajectory_ned, pcl_ned, reflectance
 
 
 def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage, 
@@ -117,7 +118,7 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
         box_max = center_pos + coverage/2
         mask = np.array(np.logical_and(np.logical_and(pointcloud_ned[0,:]>=box_min[0],pointcloud_ned[0,:]<box_max[0]),
             np.logical_and(pointcloud_ned[1,:]>=box_min[1], pointcloud_ned[1,:]<box_max[1]))).squeeze()
-        pcl_segment = pointcloud_ned[:3,mask]
+        pcl_segment = pointcloud_ned[:,mask]
         
         if reflectance is not None:
             reflectance_segment = reflectance[mask]
@@ -131,24 +132,25 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
             width = coverage
         
         # Only considere points within certain range of the center point
-        r_max = np.sqrt(pow(coverage/2, 2) + pow(width/2, 2))
+        r_max = np.sqrt(2 * pow(max(coverage, width)/2, 2))
         r = np.linalg.norm(pointcloud_ned[:2,:] - center_pos[:2].reshape(2,1), 
                            axis=0)
-        pcl_limited = pointcloud_ned[:3, r < r_max]
         
-        # Rotate pointcloud into bounding box reference system. 
-        R_z = Rotation.from_euler('z', -center_heading)
-        pcl_trafo = R_z.as_dcm() @ (pcl_limited - center_pos.reshape(3,1))
+        pcl_ned = pointcloud_ned[:, r < r_max]
+        
+        # Rotate pointcloud into bounding box reference system.
+        pcl_bb = pcl_trafo(pcl_ned, trans_oldref=-center_pos, 
+                           rot=np.array([0, 0, -center_heading]))
         
         # Get extend of bounding box
         box_max = np.array([coverage/2, width/2, 0])
         box_min = -1 * box_max
         
-        mask = np.array(np.logical_and(np.logical_and(pcl_trafo[0,:]>=box_min[0],pcl_trafo[0,:]<box_max[0]),
-            np.logical_and(pcl_trafo[1,:]>=box_min[1], pcl_trafo[1,:]<box_max[1]))).squeeze()
+        mask = np.array(np.logical_and(np.logical_and(pcl_bb[0,:]>=box_min[0],pcl_bb[0,:]<box_max[0]),
+            np.logical_and(pcl_bb[1,:]>=box_min[1], pcl_bb[1,:]<box_max[1]))).squeeze()
 
         # Get segment from untransformed PCL
-        pcl_segment = pcl_limited[:,mask]
+        pcl_segment = pcl_ned[:,mask]
         
         if reflectance is not None:
             reflectance_limited = reflectance[r < r_max]
@@ -159,7 +161,22 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
     
     
     return pcl_segment, reflectance_segment
+
+
+def simple_pcl_downsampling(pcl, target_size, ground_frac):
+    #TODO: rudimentary ground removal. replace with SAC removal later
+    down_coord = np.array(pcl[2,:]).squeeze()
+    rng = max(down_coord) - min(down_coord)
+    ground_thresh = max(down_coord)-rng*ground_frac
+    pcl_downsample = pcl[:,down_coord<ground_thresh]
     
+    if pcl_downsample.shape[1] >= 3*target_size:
+        subsample = sample(list(range(pcl_downsample.shape[1])),target_size)
+        pcl_downsample = pcl_downsample[:,subsample]
+    else:
+        pcl_downsample = None
+    
+    return pcl_downsample
     
 
 if __name__ == "__main__":
@@ -224,25 +241,20 @@ if __name__ == "__main__":
             if dist_to_next<=0:
                 submap, _ = get_pcl_segment(trajectory_ned, pointcloud_ned, 
                                             segment_center_idx, submap_coverage)
+                submap = submap[:3,:]
                 
                 # Save raw pointcloud for preprocessing with PCL later
                 submap.tofile('pcl/oxford_{}_{}.rawpcl'.format(date_of_run, segment_idx))
                 
-                #TODO: rudimentary ground removal. replace with SAC removal later
-                down_coord = np.array(submap[2,:]).squeeze()
-                rng = max(down_coord) - min(down_coord)
-                ground_thresh = max(down_coord)-rng*ground_frac
-                submap = submap[:,down_coord<ground_thresh]
+                # Rudimentary ground removal and downsampling
+                submap = simple_pcl_downsampling(submap, subsample_size, ground_frac)
                 
                 #if submap doesn't contain enough points, skip to next submap;
                 #this shouldn't happen, warn if it does
-                if submap.shape[1]<3*subsample_size:
-                    print("No submap for pos {} generated, point cloud density too low", np.array(segment_center_pos).flatten())
+                if submap is None:
+                    print("No submap for pos {} generated, point cloud density too low, idx ", 
+                          segment_center_idx)
                     continue
-                
-                #TODO: randomly sample 4K points, replace with voxel grid filter
-                subsample = sample(list(range(submap.shape[1])),subsample_size)
-                submap = submap[:,subsample]
                 
                 #center and rescale to the range [-1,1]
                 segment_center_pos = trajectory_ned[[0,1,2], segment_center_idx]
