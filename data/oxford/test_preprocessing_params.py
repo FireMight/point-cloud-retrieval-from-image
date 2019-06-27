@@ -85,12 +85,13 @@ if __name__ == "__main__":
                                rot=-ref_state[3:])
         
         # Transform pcl into camera frame
-        
         submap_cam = G_camera_posesource @ submap_veh
 
-        
         # Project points into image
         uv, depth = camera_model.project(submap_cam, image.shape)
+        
+        # Get ratio of points in image to total points
+        points_in_image_ratio = uv.shape[1] / submap.shape[1]
 
         plt.imshow(pil_image)
         plt.hold(True)
