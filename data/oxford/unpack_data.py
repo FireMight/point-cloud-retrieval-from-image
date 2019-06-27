@@ -2,11 +2,11 @@
 import os
 import tarfile
 
+
 if __name__ == "__main__":
     run_str = None
     
-    #required_data = ['lms_front', 'stereo_centre', 'gps', 'tags']
-    required_data = ['lms_front', 'gps', 'tags']
+    required_data = ['lms_front', 'stereo_centre', 'gps', 'tags', 'vo']
     tar_archieves = {}
     for name in required_data:
         tar_archieves[name] = []
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # Extract tar files into subdirectories
     for data_type, file_names in tar_archieves.items():
         data_dir = root_dir + '/' + data_type
-        print('Create dir: ', data_dir)
+        print('Creating data dir ', data_dir)
         os.mkdir(data_dir)
         
         for chunk_id, file_name in enumerate(file_names):
@@ -42,11 +42,12 @@ if __name__ == "__main__":
                 for member in tar.getmembers():
                     if member.isreg():  # skip if the TarInfo is not files
                         member.name = os.path.basename(member.name) # remove the path by reset it
-                        tar.extract(member, data_dir) # extract 
+                        tar.extract(member, data_dir) # extract
             
-            # Move timestamp files if one exists
-            for timestamp_file in [file for file in os.listdir(data_dir) if file.endswith('.timestamp')]:
-                os.rename(data_dir + '/' + timestamp_file, root_dir + '/' + timestamp_file)
+        # Move timestamp files if one exists
+        for timestamp_file in [file for file in os.listdir(data_dir) if file.endswith('.timestamps')]:
+            print('Moving timestamps file ' + timestamp_file + ' to root dir')
+            os.rename(data_dir + '/' + timestamp_file, root_dir + '/' + timestamp_file)
                 
     
     
