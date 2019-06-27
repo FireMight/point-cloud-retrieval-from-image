@@ -32,7 +32,12 @@ if __name__ == "__main__":
     
     # Extract tar files into subdirectories
     for data_type, file_names in tar_archieves.items():
-        data_dir = root_dir + '/' + data_type
+        if data_type == 'stereo_centre':
+            data_dir = root_dir + '/stereo'
+            os.mkdir(data_dir) # Centre camera has two hierarchy levels...
+            data_dir += '/centre'
+        else:
+            data_dir = root_dir + '/' + data_type
         print('Creating data dir ', data_dir)
         os.mkdir(data_dir)
         
