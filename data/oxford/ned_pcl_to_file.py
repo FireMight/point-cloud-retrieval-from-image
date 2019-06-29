@@ -223,6 +223,10 @@ if __name__ == "__main__":
                                                    data_ned[2])
     date_of_run = datetime.utcfromtimestamp(
             trajectory_ned[6,0]*1e-6).strftime('%Y-%m-%d')
+            
+    trajectory_ned.tofile('pcl/complete/trajectory_ned_{}.bin'.format(date_of_run))
+    pointcloud_ned.tofile('pcl/complete/pointcloud_ned_{}.bin'.format(date_of_run))
+    reflectance.tofile('pcl/complete/reflectance_{}.bin'.format(date_of_run))
     
     # Split complete map into submaps of 10 and 20 m length for testing
     for length in [10, 20]:
