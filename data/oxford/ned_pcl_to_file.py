@@ -132,7 +132,7 @@ def create_ref_submaps(i_start, i_end, length, pcl_ned, trajectory_ned,
         # Split trajectory when full distance is travelled
         if dist_to_next<=0:
             submap, _ = get_pcl_segment(trajectory_ned, pcl_ned, 
-                                        i_center, length, width=50,
+                                        i_center, length, width=40,
                                         alignment='trajectory')
             submap = submap[:3,:]
             
@@ -188,7 +188,7 @@ def create_rand_submaps(i_min, i_max, length, pcl_ned, trajectory_ned,
         
         # Create submap
         submap, _ = get_pcl_segment(trajectory_ned, pcl_ned, 
-                                    i_center, length, width=50,
+                                    i_center, length, width=40,
                                     alignment='trajectory')
         submap = submap[:3,:]
         
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
     lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
     lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
-    max_trajectory_size = 2000 # per split
+    max_trajectory_size = 10000 # per split
     n_random_submaps = 3000 # per length
     lengths = [10,20] # IMPORTANT: Works only for these values, do not change!
     
@@ -288,6 +288,17 @@ if __name__ == "__main__":
     n_meas = trajectory_ned.shape[1]
     date_of_run = datetime.utcfromtimestamp(
             trajectory_ned[6,0]*1e-6).strftime('%Y-%m-%d')
+            
+    # Cleanup target directories
+    print('Delete old pcl files...')
+    for label in ['reference', 'random']:
+        for length in lengths:
+            directory = 'pcl/{}_{}m'.format(label, length)
+            print('in', directory)
+            for file in os.listdir(directory):
+                os.remove(os.path.join(directory, file))
+    print('Done!')
+            
             
     # Create csv metadata files
     metadata_fieldnames = ['seg_idx', 
@@ -345,7 +356,8 @@ if __name__ == "__main__":
                                     trajectory_ned, n_random_split, date_of_run,
                                     metadata_csv['random'][length], 
                                     seg_idx_start['random'][length])
-            
+        
+        print('Finished approx. {}%'.format(split.i_end/trajectory_ned.shape[1]*100))
         i_start = split.i_end + 1
 
         
