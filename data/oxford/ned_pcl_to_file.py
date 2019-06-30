@@ -8,6 +8,7 @@ import os
 import sys
 from random import sample
 from datetime import datetime
+from collections import namedtuple, defaultdict
 
 from pcl_trafo import pcl_trafo
 
@@ -60,52 +61,19 @@ def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     ax.set_zlim(-z_range[1], -z_range[0])
     ax.view_init(-140, 0) # elevation, azimuth
     plt.show()
-    
 
-def import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, ins_data_file, 
-                              extrinsics_dir='robotcar-dataset-sdk/extrinsics',
-                              n_splits=1, process_split=0):
-    # Determine which indices to process in current split
-    assert process_split < n_splits
+def import_trajectory_ned(ins_data_file, lidar_timestamp_file):
+    # Get start and end timestamp of LIDAR measurements
+    print('Get start and end time of LIADR measurements...')
     with open(lidar_timestamp_file) as ts_file:
-        for n_total, _ in enumerate(ts_file):
+        start_time = int(next(ts_file).split(' ')[0])
+        for end_time in ts_file:
             continue
+        end_time = int(end_time.split(' ')[0])
+    print('Done!')
     
-    n_split = int(n_total / n_splits)
-    start_meas = process_split * n_split
-    if process_split == n_splits - 1:
-        end_meas = n_total
-    else:
-        end_meas = start_meas + n_split
-    print('LIDAR Import: Process split {} / {} with {} measurements ({} total)'.
-          format(process_split+1, n_splits, n_split, n_total))
-    
-    
-    # Get start and end timestamp
-    print('Import LIDAR timestamp file...')
-    with open(lidar_timestamp_file) as ts_file:
-        for i_meas, time in enumerate(ts_file):
-            # Update start time if start_meas was reached
-            if i_meas == start_meas:
-                start_time = int(time.split(' ')[0])
-            
-            # Set end time if end_meas was reached
-            if i_meas == end_meas - 1:
-                end_time = int(time.split(' ')[0])
-                break
-            continue
-        
-    print('Done! Start measurement {} (t={}), end measurement {} (t={})'.
-          format(start_meas, start_time, end_meas, end_time))
-    
-    
-    # Calculate point cloud relative to start frame of trajectory
-    print('Build pointcloud...')
-    pcl_veh, reflectance = sdk_pcl.build_pointcloud(lidar_dir, ins_data_file,  
-                                                    extrinsics_dir, start_time, 
-                                                    end_time)
-    print('Done! Build NED trajectory...')
     # Get trajectory corresponding to LIDAR data
+    print('Create NED trajectory from INS data...')
     trajectory_ned = np.empty((7,0))
     with open(ins_data_file, 'r') as ins_file:
         reader = csv.DictReader(ins_file)
@@ -122,18 +90,166 @@ def import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, ins_data_file,
                                   float(row['yaw']),
                                   int(row['timestamp'])]).reshape(7,1)
             trajectory_ned = np.append(trajectory_ned, ned_state, axis=1)
+    print('Done! Trajectory with {} samples'.format(trajectory_ned.shape[1]))
     
-    # Create transformation matrix and transform pcl from vehicle-fixed to NED
-    print('Done! Number of trajectory samples:', trajectory_ned.shape[1])
-    print('Transform pointcloud to NED reference system...')
-    state_first_frame = trajectory_ned[:6,0]
-    state_first_frame = state_first_frame.flatten()
-    pcl_ned = pcl_trafo(pcl_veh, trans_newref=state_first_frame[:3], 
-                        rot=state_first_frame[3:])
-    print('Done!')
-    
-    return trajectory_ned, pcl_ned, reflectance
+    return trajectory_ned
 
+
+def get_next_split(i_start, max_trajectory_size, trajectory_ned, lidar_dir, 
+                   extrinsics_dir='robotcar-dataset-sdk/extrinsics'):
+    split = namedtuple('Split', 'i_end, end_of_route, pcl_ned, reflectance')
+    state_first_frame = trajectory_ned[:,i_start]
+    i_max = min(i_start+max_trajectory_size, trajectory_ned.shape[1])
+    
+    prev_pos = state_first_frame[:3]
+    dist_to_20 = 20
+    split.i_end = None
+    i_pcl_end = None
+    n_submaps_20 = 0
+    for i in range(i_start+1,i_max):
+        curr_pos = trajectory_ned[[0,1,2],i]
+        dist_to_20 -= np.linalg.norm(prev_pos - curr_pos)
+        prev_pos = curr_pos
+        
+        if dist_to_20 < 0:
+            if i_pcl_end is not None:
+                split.i_end = i_pcl_end
+                n_submaps_20 += 1
+            
+            i_pcl_end = i
+            dist_to_20 = 20
+
+    print('Get next split: i_start {} i_end {} i_pcl_end {} n_submaps_20 {}'.
+          format(i_start, split.i_end, i_pcl_end, n_submaps_20))
+            
+    if split.i_end is None or i_pcl_end is None:
+        split.end_of_route = True
+    else:
+        split.end_of_route = False
+        start_time = state_first_frame[6]
+        end_time = trajectory_ned[6,i_pcl_end]
+        
+        # Build pointcloud in vehicle reference frame
+        print('Build PCL...')
+        pcl_split_veh, split.reflectance = sdk_pcl.build_pointcloud(lidar_dir, 
+                                            ins_data_file, extrinsics_dir, 
+                                            start_time, end_time)
+        print('Done!')
+        
+        # Transform pointlcoud to NED system
+        state_first_frame = state_first_frame.flatten()
+        split.pcl_ned = pcl_trafo(pcl_split_veh, trans_newref=state_first_frame[:3], 
+                                  rot=state_first_frame[3:])
+
+    return split
+
+
+def create_ref_submaps(i_start, i_end, length, pcl_ned, trajectory_ned, 
+                       date_of_run, metadata_csv, segment_idx_start):
+    print('Create reference submaps for length {} (i_start {}, i_end {})...'.
+          format(length, i_start, i_end))
+    directory = 'pcl/reference_{}m'.format(length)
+    prev_pos = trajectory_ned[[0,1,2],i_start]
+    dist_to_next = length
+    i_center = None
+    segment_idx = segment_idx_start
+    
+    for i in range(i_start+1,i_end+2): # +2 to account for rounding errors
+        curr_pos = trajectory_ned[[0,1,2],i]
+        dist_to_next -= np.linalg.norm(prev_pos - curr_pos)
+        prev_pos = curr_pos
+                
+        # Save center point when half of the distance is travelled
+        if dist_to_next<=length/2 and i_center is None:
+            i_center = i
+        
+        # Split trajectory when full distance is travelled
+        if dist_to_next<=0:
+            submap, _ = get_pcl_segment(trajectory_ned, pcl_ned, 
+                                        i_center, length, width=50,
+                                        alignment='trajectory')
+            submap = submap[:3,:]
+            
+            # Save raw pointcloud for preprocessing with PCL later
+            submap.tofile(directory + '/submap_{}_reference_{}m_{}.rawpcl'.
+                          format(date_of_run, length, segment_idx))
+    
+            #Save metadata of all pointcloud files to csv
+            with open(metadata_csv, 'a') as outcsv:
+                writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
+                writer.writerow({'seg_idx' : segment_idx, 
+                                 'timestamp_start' : int(trajectory_ned[6,i_start]), 
+                                 'northing_start' : trajectory_ned[0,i_start],
+                                 'easting_start' : trajectory_ned[1,i_start],
+                                 'down_start' : trajectory_ned[2,i_start],
+                                 'heading_start' : trajectory_ned[5,i_start],
+                                 'timestamp_center' : int(trajectory_ned[6,i_center]),
+                                 'northing_center' : trajectory_ned[0,i_center],
+                                 'easting_center' : trajectory_ned[1,i_center],
+                                 'down_center' : trajectory_ned[2,i_center],
+                                 'heading_center' : trajectory_ned[5,i_center]})
+    
+            i_start = i+1
+            dist_to_next=length
+            i_center = None
+            segment_idx += 1
+    
+    print('Done! Created {} submaps'.format(segment_idx-segment_idx_start))
+    
+    return segment_idx
+
+
+def create_rand_submaps(i_min, i_max, length, pcl_ned, trajectory_ned, 
+                        n_submaps, date_of_run, metadata_csv, segment_idx_start):
+    print('Create {} random submaps for length {} (i_min {}, i_max {})...'.
+          format(n_submaps, length, i_min, i_max))
+    directory = 'pcl/random_{}m'.format(length)
+    segment_idx = segment_idx_start
+    
+    for _ in range(n_submaps):
+        # Get random start index and corresponding center 
+        i_start = np.random.randint(low=i_min, high=i_max)
+        prev_pos = trajectory_ned[[0,1,2],i_start]
+        dist_to_center = length/2
+        
+        for i_center in range(i_start, i_max):
+            curr_pos = trajectory_ned[[0,1,2],i_center]
+            dist_to_center -= np.linalg.norm(prev_pos - curr_pos)
+            prev_pos = curr_pos
+            
+            if dist_to_center < 0:
+                break
+        
+        # Create submap
+        submap, _ = get_pcl_segment(trajectory_ned, pcl_ned, 
+                                    i_center, length, width=50,
+                                    alignment='trajectory')
+        submap = submap[:3,:]
+        
+        # Save raw pointcloud for preprocessing with PCL later
+        submap.tofile(directory + '/submap_{}_random_{}m_{}.rawpcl'.
+                      format(date_of_run, length, segment_idx))
+
+        #Save metadata of all pointcloud files to csv
+        with open(metadata_csv, 'a') as outcsv:
+            writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
+            writer.writerow({'seg_idx' : segment_idx, 
+                             'timestamp_start' : int(trajectory_ned[6,i_start]), 
+                             'northing_start' : trajectory_ned[0,i_start],
+                             'easting_start' : trajectory_ned[1,i_start],
+                             'down_start' : trajectory_ned[2,i_start],
+                             'heading_start' : trajectory_ned[5,i_start],
+                             'timestamp_center' : int(trajectory_ned[6,i_center]),
+                             'northing_center' : trajectory_ned[0,i_center],
+                             'easting_center' : trajectory_ned[1,i_center],
+                             'down_center' : trajectory_ned[2,i_center],
+                             'heading_center' : trajectory_ned[5,i_center]})
+        
+        segment_idx += 1
+    print('Done! Created {} submaps'.format(segment_idx-segment_idx_start))
+    
+    return segment_idx
+        
 
 def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage, 
                     alignment='north_east', width=None, reflectance=None):
@@ -190,22 +306,6 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
     
     
     return pcl_segment, reflectance_segment
-
-
-def simple_pcl_downsampling(pcl, target_size, ground_frac):
-    #TODO: rudimentary ground removal. replace with SAC removal later
-    down_coord = np.array(pcl[2,:]).squeeze()
-    rng = max(down_coord) - min(down_coord)
-    ground_thresh = max(down_coord)-rng*ground_frac
-    pcl_downsample = pcl[:,down_coord<ground_thresh]
-    
-    if pcl_downsample.shape[1] >= 3*target_size:
-        subsample = sample(list(range(pcl_downsample.shape[1])),target_size)
-        pcl_downsample = pcl_downsample[:,subsample]
-    else:
-        pcl_downsample = None
-    
-    return pcl_downsample
     
 
 if __name__ == "__main__":
@@ -213,184 +313,77 @@ if __name__ == "__main__":
     ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
     lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
     lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
-    n_random_submaps = 3000
-    plot = False
+    max_trajectory_size = 2000 # per split
+    n_random_submaps = 3000 # per length
+    lengths = [10,20] # IMPORTANT: Works only for these values, do not change!
     
-    # Load data
-    data_ned = import_trajectory_pcl_ned(lidar_timestamp_file, lidar_dir, 
-                                         ins_data_file)
-    trajectory_ned, pointcloud_ned, reflectance = (data_ned[0], data_ned[1], 
-                                                   data_ned[2])
+    # Load NED trajectory
+    trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
+    n_meas = trajectory_ned.shape[1]
     date_of_run = datetime.utcfromtimestamp(
             trajectory_ned[6,0]*1e-6).strftime('%Y-%m-%d')
             
-    trajectory_ned.tofile('pcl/complete/trajectory_ned_{}.bin'.format(date_of_run))
-    pointcloud_ned.tofile('pcl/complete/pointcloud_ned_{}.bin'.format(date_of_run))
-    reflectance.tofile('pcl/complete/reflectance_{}.bin'.format(date_of_run))
+    # Create csv metadata files
+    metadata_fieldnames = ['seg_idx', 
+                           'timestamp_start',
+                           'northing_start',
+                           'easting_start',
+                           'down_start',
+                           'heading_start', 
+                           'timestamp_center',
+                           'northing_center',
+                           'easting_center',
+                           'down_center',
+                           'heading_center']
+    metadata_csv = {}
+    for label in ['reference', 'random']:
+        metadata_csv[label] = {}
+        for length in lengths:
+            directory = 'pcl/{}_{}m'.format(label, length)
+            metadata_csv[label][length] = (directory + 
+                                           '/metadata_{}_{}_{}m.csv'.
+                                           format(date_of_run, label, length))
+                            
+            with open(metadata_csv[label][length], 'w') as outcsv:
+                writer = csv.DictWriter(outcsv, metadata_fieldnames)
+                writer.writeheader()
     
-    # Split complete map into submaps of 10 and 20 m length for testing
-    for length in [10, 20]:
-        print('Split complete trajectory into test submaps (length {}m)...'.
-              format(length))
-        dist_to_next = length
-        prev_pos = trajectory_ned[[0,1,2],0]
-        i_center = None
-        i_start = 0 # Index of the start of each segment
-        segment_idx = 0
-        directory = 'pcl/reference_{}m'.format(length)
-        metadata_csv = directory + '/metadata_{}_ref_{}.csv'.format(date_of_run,
-                                                                    length)
-        metadata_fieldnames = ['seg_idx', 
-                               'timestamp_start',
-                               'northing_start',
-                               'easting_start',
-                               'down_start',
-                               'heading_start', 
-                               'timestamp_center',
-                               'northing_center',
-                               'easting_center',
-                               'down_center',
-                               'heading_center']
-            
-        # Create csv file containing metadata for all segments
-        with open(metadata_csv, 'w') as outcsv:
-            writer = csv.DictWriter(outcsv, metadata_fieldnames)
-            writer.writeheader()
-        
-        #TODO: check units - are point cloud coordinates given in meters
-        #walk along trajectory, sample every submap_coverage units traveled
-        for i in range(1,trajectory_ned.shape[1]):
-            curr_pos = trajectory_ned[[0,1,2],i]
-            dist_to_next = dist_to_next - np.linalg.norm(prev_pos - curr_pos)
-            prev_pos=curr_pos
-            # Save center point when half of the distance is travelled
-            if dist_to_next<=length/2 and i_center is None:
-                i_center = i
-            
-            # Split trajectory when full distance is travelled
-            if dist_to_next<=0:
-                submap, _ = get_pcl_segment(trajectory_ned, pointcloud_ned, 
-                                            i_center, length, width=50,
-                                            alignment='trajectory')
-                submap = submap[:3,:]
-                
-                # Save raw pointcloud for preprocessing with PCL later
-                submap.tofile(directory + '/submap_{}_ref_{}_{}.rawpcl'.
-                              format(date_of_run, length, segment_idx))
-        
-                #Save metadata of all pointcloud files to csv
-                with open(metadata_csv, 'a') as outcsv:
-                    writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
-                    writer.writerow({'seg_idx' : segment_idx, 
-                                     'timestamp_start' : int(trajectory_ned[6,i_start]), 
-                                     'northing_start' : trajectory_ned[0,i_start],
-                                     'easting_start' : trajectory_ned[1,i_start],
-                                     'down_start' : trajectory_ned[2,i_start],
-                                     'heading_start' : trajectory_ned[5,i_start],
-                                     'timestamp_center' : int(trajectory_ned[6,i_center]),
-                                     'northing_center' : trajectory_ned[0,i_center],
-                                     'easting_center' : trajectory_ned[1,i_center],
-                                     'down_center' : trajectory_ned[2,i_center],
-                                     'heading_center' : trajectory_ned[5,i_center]})
-                
-                if plot:
-                    trajectory_rescaled = trajectory_ned[:,i_start:i]
-                    trajectory_rescaled[0,:] = trajectory_rescaled[0,:] - trajectory_ned[0,i_center]
-                    trajectory_rescaled[1,:] = trajectory_rescaled[1,:] - trajectory_ned[1,i_center]
-                    trajectory_rescaled[2,:] = trajectory_rescaled[2,:] - trajectory_ned[2,i_center]
-                    trajectory_rescaled[0:3,:] = trajectory_rescaled[0:3,:] / (length/2)
-                    plot_pcl_traj(submap, trajectory_ned=trajectory_rescaled)
-        
-                i_start = i+1
-                dist_to_next=length
-                i_center = None
-                segment_idx += 1
-        print('Done! Generated {} submaps'.format(segment_idx))
+    # Calculate required number of random submaps per split
+    n_splits = trajectory_ned.shape[1] / max_trajectory_size
+    n_random_split = int(n_random_submaps / n_splits)
     
     
-    # Randomly sample training data
-    np.random.seed(0)
-    for length in [10, 20]:
-        print('Randomly sample training submaps (length {}m)...'.format(length))
-        directory = 'pcl/random_{}m'.format(length)
-        metadata_csv = directory + '/metadata_{}_rand_{}.csv'.format(date_of_run,
-                                                                     length)
-        metadata_fieldnames = ['seg_idx', 
-                               'timestamp_start',
-                               'northing_start',
-                               'easting_start',
-                               'down_start',
-                               'heading_start', 
-                               'timestamp_center',
-                               'northing_center',
-                               'easting_center',
-                               'down_center',
-                               'heading_center']
-            
-        # Create csv file containing metadata for all segments
-        with open(metadata_csv, 'w') as outcsv:
-            writer = csv.DictWriter(outcsv, metadata_fieldnames)
-            writer.writeheader()
+    # Initialize start timestamps and segment indices
+    i_start = 0
+    seg_idx_start = defaultdict(lambda: defaultdict(int))
+    while True:
+        print('============= new split =============')
+        split = get_next_split(i_start, max_trajectory_size, trajectory_ned, 
+                               lidar_dir)
         
-        # Get min and max center indices (to ensure submaps are of full length at 
-        # start and end of trajectory)
-        prev_pos = trajectory_ned[[0,1,2],0]
-        dist = 0
-        for i_min in range(1,trajectory_ned.shape[1]):
-            curr_pos = trajectory_ned[[0,1,2],i_min]
-            dist += np.linalg.norm(prev_pos - curr_pos)
-            prev_pos = curr_pos
-            if dist > length/2:
-                break
+        if split.end_of_route:
+            print('End of route')
+            break
         
-        prev_pos = trajectory_ned[[0,1,2],-1]
-        dist = 0
-        for i_max in range(trajectory_ned.shape[1]-1, 0, -1):
-            curr_pos = trajectory_ned[[0,1,2],i_max]
-            dist += np.linalg.norm(prev_pos - curr_pos)
-            prev_pos = curr_pos
-            if dist > length/2:
-                break
-        
-        for segment_idx in range(n_random_submaps):
-            i_center = np.random.randint(low=i_min, high=i_max)
+        for length in lengths:
+            # Create equally spaced reference submaps for testing
+            seg_idx_start['reference'][length] = create_ref_submaps(i_start, 
+                                    split.i_end, length, split.pcl_ned, 
+                                    trajectory_ned, date_of_run,
+                                    metadata_csv['reference'][length], 
+                                    seg_idx_start['reference'][length])
             
-            submap, _ = get_pcl_segment(trajectory_ned, pointcloud_ned, 
-                                        i_center, length, width=50,
-                                        alignment='trajectory')
-            submap = submap[:3,:]
+            # Create random submaps for training
+            seg_idx_start['random'][length] = create_rand_submaps(i_start, 
+                                    split.i_end, length, split.pcl_ned, 
+                                    trajectory_ned, n_random_split, date_of_run,
+                                    metadata_csv['random'][length], 
+                                    seg_idx_start['random'][length])
             
-            # Save raw pointcloud for preprocessing with PCL later
-            submap.tofile(directory + '/submap_{}_rand_{}_{}.rawpcl'.
-                          format(date_of_run, length, segment_idx))
-            
-            # Find start index
-            prev_pos = trajectory_ned[[0,1,2],i_center]
-            dist = 0
-            for i_start in range(i_center-1, 0, -1):
-                curr_pos = trajectory_ned[[0,1,2],i_start]
-                dist += np.linalg.norm(prev_pos - curr_pos)
-                prev_pos = curr_pos
-                if dist > length/2:
-                    break
-            
-    
-            #Save metadata of all pointcloud files to csv
-            with open(metadata_csv, 'a') as outcsv:
-                writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
-                writer.writerow({'seg_idx' : segment_idx, 
-                                 'timestamp_start' : int(trajectory_ned[6,i_start]), 
-                                 'northing_start' : trajectory_ned[0,i_start],
-                                 'easting_start' : trajectory_ned[1,i_start],
-                                 'down_start' : trajectory_ned[2,i_start],
-                                 'heading_start' : trajectory_ned[5,i_start],
-                                 'timestamp_center' : int(trajectory_ned[6,i_center]),
-                                 'northing_center' : trajectory_ned[0,i_center],
-                                 'easting_center' : trajectory_ned[1,i_center],
-                                 'down_center' : trajectory_ned[2,i_center],
-                                 'heading_center' : trajectory_ned[5,i_center]})
-        print('Done! Generated {} submaps'.format(segment_idx+1))
+        i_start = split.i_end + 1
 
+        
+            
                 
 
 
