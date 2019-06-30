@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
 import csv
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 import sys
-from random import sample
 from datetime import datetime
 from collections import namedtuple, defaultdict
 
@@ -16,51 +13,6 @@ from pcl_trafo import pcl_trafo
 sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
 import build_pointcloud as sdk_pcl
 
-
-def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
-    x = np.ravel(pointcloud_ned[0, :])
-    y = np.ravel(pointcloud_ned[1, :])
-    z = np.ravel(pointcloud_ned[2, :])
-
-    xmin = x.min()
-    ymin = y.min()
-    zmin = z.min()
-    xmax = x.max()
-    ymax = y.max()
-    zmax = z.max()
-    xmid = (xmax + xmin) * 0.5
-    ymid = (ymax + ymin) * 0.5
-    zmid = (zmax + zmin) * 0.5
-
-    max_range = max(xmax - xmin, ymax - ymin, zmax - zmin)
-    x_range = [xmid - 0.5 * max_range, xmid + 0.5 * max_range]
-    y_range = [ymid - 0.5 * max_range, ymid + 0.5 * max_range]
-    z_range = [zmid - 0.5 * max_range, zmid + 0.5 * max_range]
-
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    ax.set_aspect('equal')
-    
-    if reflectance is not None:
-        colours = (reflectance - reflectance.min()) / (reflectance.max() - reflectance.min())
-        colours = 1 / (1 + np.exp(-10 * (colours - colours.mean())))
-        ax.scatter(-y, -x, -z, marker=',', s=1, c=colours, cmap='gray', 
-               edgecolors='none')
-    else:
-        ax.scatter(-y, -x, -z, marker=',', s=1, c='gray',
-               edgecolors='none')
-    
-    if trajectory_ned is not None:
-        traj_x = np.ravel(trajectory_ned[0, :])
-        traj_y = np.ravel(trajectory_ned[1, :])
-        traj_z = np.ravel(trajectory_ned[2, :])
-        ax.scatter(-traj_y, -traj_x, -traj_z, marker=',', s=1, c='r')
-        
-    ax.set_xlim(-y_range[1], -y_range[0])
-    ax.set_ylim(-x_range[1], -x_range[0])
-    ax.set_zlim(-z_range[1], -z_range[0])
-    ax.view_init(-140, 0) # elevation, azimuth
-    plt.show()
 
 def import_trajectory_ned(ins_data_file, lidar_timestamp_file):
     # Get start and end timestamp of LIDAR measurements
@@ -72,25 +24,39 @@ def import_trajectory_ned(ins_data_file, lidar_timestamp_file):
         end_time = int(end_time.split(' ')[0])
     print('Done!')
     
-    # Get trajectory corresponding to LIDAR data
-    print('Create NED trajectory from INS data...')
-    trajectory_ned = np.empty((7,0))
-    with open(ins_data_file, 'r') as ins_file:
-        reader = csv.DictReader(ins_file)
-        for row in reader:
-            if int(row['timestamp']) > end_time:
-                break
-            if int(row['timestamp']) < start_time:
-                continue
-            ned_state = np.array([float(row['northing']),
-                                  float(row['easting']),
-                                  float(row['down']),
-                                  float(row['roll']),
-                                  float(row['pitch']),
-                                  float(row['yaw']),
-                                  int(row['timestamp'])]).reshape(7,1)
-            trajectory_ned = np.append(trajectory_ned, ned_state, axis=1)
-    print('Done! Trajectory with {} samples'.format(trajectory_ned.shape[1]))
+    # Check if NED trajectory has already been computed
+    date_of_run = datetime.utcfromtimestamp(start_time*1e-6).strftime('%Y-%m-%d')
+    trajectory_file = 'trajectory/ned_trajectory_{}.npy'.format(date_of_run)
+    print('Search for precomputed NED trajectory ' + trajectory_file + '...')
+    
+    try:
+        trajectory_ned = np.load(trajectory_file)
+        print('Done!')
+    except:
+        # Get trajectory corresponding to LIDAR data
+        print('Not found! Create NED trajectory from INS data...')
+        trajectory_ned = np.empty((7,0))
+        with open(ins_data_file, 'r') as ins_file:
+            reader = csv.DictReader(ins_file)
+            for row in reader:
+                if int(row['timestamp']) > end_time:
+                    break
+                if int(row['timestamp']) < start_time:
+                    continue
+                ned_state = np.array([float(row['northing']),
+                                      float(row['easting']),
+                                      float(row['down']),
+                                      float(row['roll']),
+                                      float(row['pitch']),
+                                      float(row['yaw']),
+                                      float(row['timestamp'])]).reshape(7,1)
+                trajectory_ned = np.append(trajectory_ned, ned_state, axis=1)
+        print('Done! Trajectory with {} samples'.format(trajectory_ned.shape[1]))
+        
+        # Save trajectory
+        print('Save NED trajectory to ' + trajectory_file + '...')
+        np.save(trajectory_file, trajectory_ned)
+        print('Done!')
     
     return trajectory_ned
 
