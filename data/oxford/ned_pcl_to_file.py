@@ -136,6 +136,11 @@ def create_ref_submaps(i_start, i_end, length, pcl_ned, trajectory_ned,
                                         alignment='trajectory')
             submap = submap[:3,:]
             
+            # Subtract center vector before saving in float32 format to keep precision
+            center_pos = trajectory_ned[:3,i_center]
+            center_pos = center_pos[:, np.newaxis]
+            submap = submap - center_pos
+            
             # Save raw pointcloud for preprocessing with PCL later
             filename = directory + '/submap_{}_reference_{}m_{}.rawpcl'.format(
                                             date_of_run, length, segment_idx)
@@ -192,6 +197,11 @@ def create_rand_submaps(i_min, i_max, length, pcl_ned, trajectory_ned,
                                     i_center, length, width=40,
                                     alignment='trajectory')
         submap = submap[:3,:]
+        
+        # Subtract center vector before saving in float32 format to keep precision
+        center_pos = trajectory_ned[:3,i_center]
+        center_pos = center_pos[:, np.newaxis]
+        submap = submap - center_pos
         
         # Save raw pointcloud for preprocessing with PCL later
         filename = directory + '/submap_{}_random_{}m_{}.rawpcl'.format(
@@ -282,7 +292,7 @@ if __name__ == "__main__":
     lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
     lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
     max_trajectory_size = 10000 # per split
-    n_random_submaps = 3000 # per length
+    n_random_submaps = 3000 # for 10, 20m length each
     lengths = [10,20] # IMPORTANT: Works only for these values, do not change!
     
     # Load NED trajectory

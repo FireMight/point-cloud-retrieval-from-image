@@ -55,8 +55,30 @@ def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     ax.set_xlim(-y_range[1], -y_range[0])
     ax.set_ylim(-x_range[1], -x_range[0])
     ax.set_zlim(-z_range[1], -z_range[0])
-    ax.view_init(-60, 0) # elevation, azimuth
+    ax.view_init(50, 0) # elevation, azimuth
     plt.show()
+    
+
+def get_pcl_metadata(metadata_file, seg_idx):
+    metadata = None
+    with open(metadata_file) as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if row['seg_idx'] == seg_idx:
+                metadata = {}
+                metadata['seg_idx'] = int(row['seg_idx'])
+                metadata['timestamp_start'] = int(row['timestamp_start'])
+                metadata['northing_start'] = float(row['northing_start'])
+                metadata['easting_start'] = float(row['easting_start'])
+                metadata['down_start'] = float(row['down_start'])
+                metadata['heading_start'] = float(row['heading_start'])
+                metadata['timestamp_center'] = int(row['timestamp_center'])
+                metadata['northing_center'] = float(row['northing_center'])
+                metadata['easting_center'] = float(row['easting_center'])
+                metadata['down_center'] = float(row['down_center'])
+                metadata['heading_center'] = float(row['heading_center'])
+                break
+    return metadata
 
 
 if __name__ == "__main__":
@@ -76,17 +98,18 @@ if __name__ == "__main__":
                     args.type, args.length)
     
     # Load data 
-    submap = np.fromfile(submap_filename, dtype='float64')
-    submap = submap.reshape(3, submap.shape[0]//3)
+    submap = np.fromfile(submap_filename, dtype='float32')
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
-    metadata = None
-    with open(metadata_filename) as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            if row['seg_idx'] == args.index:
-                metadata = row
-                break
+    metadata = get_pcl_metadata(metadata_filename, args.index)
     assert metadata is not None
+    
+    # Rescale pointcloud
+    submap = submap.reshape(3, submap.shape[0]//3)
+    center_pos = np.array([metadata['northing_center'],
+                           metadata['easting_center'],
+                           metadata['down_center']])
+    center_pos = center_pos[:, np.newaxis]
+    submap = submap.astype('float64') + center_pos
     
         
     # Plot on map
