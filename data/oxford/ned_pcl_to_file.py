@@ -6,6 +6,8 @@ import os
 import sys
 from datetime import datetime
 from collections import namedtuple, defaultdict
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 from pcl_trafo import pcl_trafo
 
@@ -26,7 +28,7 @@ def import_trajectory_ned(ins_data_file, lidar_timestamp_file):
     
     # Check if NED trajectory has already been computed
     date_of_run = datetime.utcfromtimestamp(start_time*1e-6).strftime('%Y-%m-%d')
-    trajectory_file = 'trajectory/ned_trajectory_{}.npy'.format(date_of_run)
+    trajectory_file = 'trajectory/ned_trajectory_ins_{}.npy'.format(date_of_run)
     print('Search for precomputed NED trajectory ' + trajectory_file + '...')
     
     try:
@@ -271,7 +273,7 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
         
         mask = np.array(np.logical_and(np.logical_and(pcl_bb[0,:]>=box_min[0],pcl_bb[0,:]<box_max[0]),
             np.logical_and(pcl_bb[1,:]>=box_min[1], pcl_bb[1,:]<box_max[1]))).squeeze()
-
+            
         # Get segment from untransformed PCL
         pcl_segment = pcl_ned[:,mask]
         
@@ -284,7 +286,81 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
     
     
     return pcl_segment, reflectance_segment
+
+
+def get_pcl_metadata(metadata_file, seg_idx):
+    metadata = None
+    with open(metadata_file) as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if int(row['seg_idx']) == seg_idx:
+                metadata = {}
+                metadata['seg_idx'] = int(row['seg_idx'])
+                metadata['timestamp_start'] = int(row['timestamp_start'])
+                metadata['northing_start'] = float(row['northing_start'])
+                metadata['easting_start'] = float(row['easting_start'])
+                metadata['down_start'] = float(row['down_start'])
+                metadata['heading_start'] = float(row['heading_start'])
+                metadata['timestamp_center'] = int(row['timestamp_center'])
+                metadata['northing_center'] = float(row['northing_center'])
+                metadata['easting_center'] = float(row['easting_center'])
+                metadata['down_center'] = float(row['down_center'])
+                metadata['heading_center'] = float(row['heading_center'])
+                break
+    return metadata
+
+
+def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
+    x = np.ravel(pointcloud_ned[0, :])
+    y = np.ravel(pointcloud_ned[1, :])
+    z = np.ravel(pointcloud_ned[2, :])
+
+    xmin = x.min()
+    ymin = y.min()
+    zmin = z.min()
+    xmax = x.max()
+    ymax = y.max()
+    zmax = z.max()
+    xmid = (xmax + xmin) * 0.5
+    ymid = (ymax + ymin) * 0.5
+    zmid = (zmax + zmin) * 0.5
+
+    max_range = max(xmax - xmin, ymax - ymin, zmax - zmin)
+    x_range = [xmid - 0.5 * max_range, xmid + 0.5 * max_range]
+    y_range = [ymid - 0.5 * max_range, ymid + 0.5 * max_range]
+    z_range = [zmid - 0.5 * max_range, zmid + 0.5 * max_range]
+
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.set_aspect('equal')
     
+    if reflectance is not None:
+        colours = (reflectance - reflectance.min()) / (reflectance.max() - reflectance.min())
+        colours = 1 / (1 + np.exp(-10 * (colours - colours.mean())))
+        ax.scatter(-y, -x, -z, marker=',', s=1, c=colours, cmap='gray', 
+               edgecolors='none')
+    else:
+        ax.scatter(-y, -x, -z, marker=',', s=1, c='gray',
+               edgecolors='none')
+    
+    if trajectory_ned is not None:
+        mask = np.array(np.logical_and(np.logical_and(trajectory_ned[0,:]>=xmin,
+                                                      trajectory_ned[0,:]<xmax),
+                                       np.logical_and(trajectory_ned[1,:]>=ymin, 
+                                                      trajectory_ned[1,:]<ymax)))
+        mask = mask.squeeze()
+        traj_x = np.ravel(trajectory_ned[0, mask])
+        traj_y = np.ravel(trajectory_ned[1, mask])
+        traj_z = np.ravel(trajectory_ned[2, mask])
+        ax.scatter(-traj_y, -traj_x, -traj_z, marker=',', s=1, c='r')
+        
+    ax.set_xlim(-y_range[1], -y_range[0])
+    ax.set_ylim(-x_range[1], -x_range[0])
+    ax.set_zlim(-z_range[1], -z_range[0])
+    ax.view_init(50, 0) # elevation, azimuth
+    plt.show()
+
+
 
 if __name__ == "__main__":
     # Replace with arg parser later if required

@@ -31,39 +31,54 @@ def get_closest_camera_timestamp(ins_timestamp, camera_timestamps, start_idx):
 
 def import_camera_trajectory(camera_timestamp_file, ins_data_file, camera_dir,
                              models_dir = 'robotcar-dataset-sdk/models'):
+    # Import image rectification and debayering from SDK
+    camera_model = CameraModel(models_dir, camera_dir)
+    
     # Get timestamps from camera data
     camera_timestamps = np.genfromtxt(camera_timestamp_file)
     camera_timestamps = camera_timestamps[:,0].flatten()
     start_time = camera_timestamps[0]
     end_time = camera_timestamps[-1]
             
+    # Check if camera trajectory has already been computed
+    date_of_run = datetime.utcfromtimestamp(start_time*1e-6).strftime('%Y-%m-%d')
+    trajectory_file = 'trajectory/ned_trajectory_{}_{}.npy'.format(camera_model.camera,
+                                                                   date_of_run)
+    print('Search for precomputed camera trajectory ' + trajectory_file + '...')
     
-    # Get trajectory corresponding to camera data
-    camera_timestamp_idx = 0
-    camera_trajectory = np.empty((7,0))
-    with open(ins_data_file, 'r') as ins_file:
-        reader = csv.DictReader(ins_file)
-        for row in reader:
-            if int(row['timestamp']) > end_time:
-                break
-            if int(row['timestamp']) < start_time:
-                continue
-            
-            # Get closest corresponding camera timestamp
-            timestamp, camera_timestamp_idx = get_closest_camera_timestamp(
-                int(row['timestamp']), camera_timestamps, camera_timestamp_idx)
-            
-            camera_state = np.array([float(row['northing']),
-                                     float(row['easting']),
-                                     float(row['down']),
-                                     float(row['roll']),
-                                     float(row['pitch']),
-                                     float(row['yaw']),
-                                     timestamp]).reshape(7,1)
-            camera_trajectory = np.append(camera_trajectory, camera_state, axis=1)
-    
-    # Import image rectification and debayering from SDK
-    camera_model = CameraModel(models_dir, camera_dir)
+    try:
+        camera_trajectory = np.load(trajectory_file)
+        print('Done!')
+    except:
+        print('Not found! Create camera trajectory...')
+        # Get trajectory corresponding to camera data
+        camera_timestamp_idx = 0
+        camera_trajectory = np.empty((7,0))
+        with open(ins_data_file, 'r') as ins_file:
+            reader = csv.DictReader(ins_file)
+            for row in reader:
+                if int(row['timestamp']) > end_time:
+                    break
+                if int(row['timestamp']) < start_time:
+                    continue
+                
+                # Get closest corresponding camera timestamp
+                timestamp, camera_timestamp_idx = get_closest_camera_timestamp(
+                    int(row['timestamp']), camera_timestamps, camera_timestamp_idx)
+                
+                camera_state = np.array([float(row['northing']),
+                                         float(row['easting']),
+                                         float(row['down']),
+                                         float(row['roll']),
+                                         float(row['pitch']),
+                                         float(row['yaw']),
+                                         timestamp]).reshape(7,1)
+                camera_trajectory = np.append(camera_trajectory, camera_state, axis=1)
+        
+        # Save trajectory
+        print('Save camera trajectory to ' + trajectory_file + '...')
+        np.save(trajectory_file, camera_trajectory)
+        print('Done!')
     
     return camera_trajectory, camera_model
 
