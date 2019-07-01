@@ -137,8 +137,9 @@ def create_ref_submaps(i_start, i_end, length, pcl_ned, trajectory_ned,
             submap = submap[:3,:]
             
             # Save raw pointcloud for preprocessing with PCL later
-            submap.tofile(directory + '/submap_{}_reference_{}m_{}.rawpcl'.
-                          format(date_of_run, length, segment_idx))
+            filename = directory + '/submap_{}_reference_{}m_{}.rawpcl'.format(
+                                            date_of_run, length, segment_idx)
+            submap.astype('float32').tofile(filename)
     
             #Save metadata of all pointcloud files to csv
             with open(metadata_csv, 'a') as outcsv:
@@ -193,8 +194,9 @@ def create_rand_submaps(i_min, i_max, length, pcl_ned, trajectory_ned,
         submap = submap[:3,:]
         
         # Save raw pointcloud for preprocessing with PCL later
-        submap.tofile(directory + '/submap_{}_random_{}m_{}.rawpcl'.
-                      format(date_of_run, length, segment_idx))
+        filename = directory + '/submap_{}_random_{}m_{}.rawpcl'.format(
+                                            date_of_run, length, segment_idx)
+        submap.astype('float32').tofile(filename)
 
         #Save metadata of all pointcloud files to csv
         with open(metadata_csv, 'a') as outcsv:
@@ -333,6 +335,13 @@ if __name__ == "__main__":
     # Initialize start timestamps and segment indices
     i_start = 0
     seg_idx_start = defaultdict(lambda: defaultdict(int))
+    
+    #i_start = 62833
+    #seg_idx_start = {
+    #    'reference' : {10: 497, 20 : 252},
+    #    'random' : {10: 1771, 20 : 1771},
+    #    }
+    
     while True:
         print('============= new split =============')
         split = get_next_split(i_start, max_trajectory_size, trajectory_ned, 
@@ -357,7 +366,8 @@ if __name__ == "__main__":
                                     metadata_csv['random'][length], 
                                     seg_idx_start['random'][length])
         
-        print('Finished approx. {}%'.format(split.i_end/trajectory_ned.shape[1]*100))
+        print('Finished approx. {}%'.format(int(split.i_end/
+                                                trajectory_ned.shape[1]*100)))
         i_start = split.i_end + 1
 
         
