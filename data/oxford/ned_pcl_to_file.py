@@ -288,24 +288,38 @@ def get_pcl_segment(trajectory_ned, pointcloud_ned, center_idx, coverage,
     return pcl_segment, reflectance_segment
 
 
-def get_pcl_metadata(metadata_file, seg_idx):
-    metadata = None
+def read_metadata_csv_row(row):
+    metadata = {}
+    metadata['seg_idx'] = int(row['seg_idx'])
+    metadata['timestamp_start'] = int(row['timestamp_start'])
+    metadata['northing_start'] = float(row['northing_start'])
+    metadata['easting_start'] = float(row['easting_start'])
+    metadata['down_start'] = float(row['down_start'])
+    metadata['heading_start'] = float(row['heading_start'])
+    metadata['timestamp_center'] = int(row['timestamp_center'])
+    metadata['northing_center'] = float(row['northing_center'])
+    metadata['easting_center'] = float(row['easting_center'])
+    metadata['down_center'] = float(row['down_center'])
+    metadata['heading_center'] = float(row['heading_center'])
+    
+    return metadata
+
+
+def get_pcl_metadata(metadata_file, seg_idx=None):
+    if seg_idx is None:
+        # Return list of all metadata
+        metadata = []
+    else:
+        # Return metadata of single submap
+        metadata = None
+        
     with open(metadata_file) as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            if int(row['seg_idx']) == seg_idx:
-                metadata = {}
-                metadata['seg_idx'] = int(row['seg_idx'])
-                metadata['timestamp_start'] = int(row['timestamp_start'])
-                metadata['northing_start'] = float(row['northing_start'])
-                metadata['easting_start'] = float(row['easting_start'])
-                metadata['down_start'] = float(row['down_start'])
-                metadata['heading_start'] = float(row['heading_start'])
-                metadata['timestamp_center'] = int(row['timestamp_center'])
-                metadata['northing_center'] = float(row['northing_center'])
-                metadata['easting_center'] = float(row['easting_center'])
-                metadata['down_center'] = float(row['down_center'])
-                metadata['heading_center'] = float(row['heading_center'])
+            if seg_idx is None:
+                metadata.append(read_metadata_csv_row(row))
+            elif int(row['seg_idx']) == seg_idx:
+                metadata = read_metadata_csv_row(row)
                 break
     return metadata
 

@@ -5,9 +5,10 @@ import os
 import sys
 import math
 import numpy as np
-import matplotlib.pyplot as plt
 from datetime import datetime
 from PIL import Image
+
+from ned_pcl_to_file import get_pcl_metadata
 
 # Import image rectification and debayering from SDK
 sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
@@ -28,6 +29,7 @@ def get_closest_camera_timestamp(ins_timestamp, camera_timestamps, start_idx):
             break
         
     return camera_timestamps[i_min], i_min
+
 
 def import_camera_trajectory(camera_timestamp_file, ins_data_file, camera_dir,
                              models_dir = 'robotcar-dataset-sdk/models'):
@@ -82,6 +84,7 @@ def import_camera_trajectory(camera_timestamp_file, ins_data_file, camera_dir,
     
     return camera_trajectory, camera_model
 
+
 def load_image(camera_dir, timestamp, camera_model, size=None):
     image_file = os.path.join(camera_dir, '{}.png'.format(int(timestamp)))
     image = sdk_image.load_image(image_file, model=camera_model)
@@ -93,98 +96,111 @@ def load_image(camera_dir, timestamp, camera_model, size=None):
     return image, pil_image
 
 
-if __name__ == "__main__":
-    camera_dir = 'data_sample/stereo/centre'
-    camera_timestamp_file = 'data_sample/stereo.timestamps'
-    ins_data_file = 'data_sample/gps/ins.csv'
-    ref_trajectory_file = 'pcl/segments_metadata_2014-12-12.csv'
-    plot = False
+def save_images_to_pcl(data_dir, ins_data_file, label, length, camera, 
+                       center_offset=0):
+    # Load pointcloud metadata
+    pcl_dir = 'pcl/{}_{}m'.format(label, length)
+    metadata_filename = (pcl_dir + '/metadata_2014-12-02_{}_{}m.csv'.
+                                   format(label, length))
+    pcl_metadata = get_pcl_metadata(metadata_filename)
     
-    # Get camera timestamps and model
-    camera_trajectory, camera_model = import_camera_trajectory(camera_timestamp_file, 
-                                                    ins_data_file, camera_dir)
+    # Sort list by timestamp
+    pcl_metadata.sort(key=lambda pcl: pcl['timestamp_start'])
     
-    start_time = camera_trajectory[6,0]
-    end_time = camera_trajectory[6,-1]
+    # Load camera trajectory and model
+    if camera == 'center':
+        img_dir = data_dir + '/stereo/centre'
+        timestamp_file = data_dir + '/stereo.timestamps'
+    else:
+        img_dir = data_dir + '/mono_{}'.format(camera)
+        timestamp_file = data_dir + '/mono_{}.timestamps'.format(camera)
     
-    # Get trajectory corresponding to reference point cloud map
-    ref_trajectory = np.empty((6,0))
-    with open(ref_trajectory_file, 'r') as ref_file:
-        reader = csv.DictReader(ref_file)
-        for row in reader:
-            if float(row['timestamp_end']) > end_time:
-                break
-            if float(row['timestamp_start']) < start_time:
-                continue
-            segment_start = np.array([float(row['northing_start']),
-                                      float(row['easting_start']),
-                                      float(row['down_start']),
-                                      float(row['heading_start']),
-                                      int(row['seg_idx']),
-                                      int(row['timestamp_start'])]).reshape(6,1)
-            ref_trajectory = np.append(ref_trajectory, segment_start, axis=1)
-    
-    
-    # Create csv file containing metadata for all images
+    camera_trajectory, camera_model = import_camera_trajectory(
+                                        timestamp_file, ins_data_file, img_dir)
     date_of_run = datetime.utcfromtimestamp(
-            camera_trajectory[6,0]*1e-6).strftime('%Y-%m-%d')
-    metadata_csv = 'img/image_metadata_{}.csv'.format(date_of_run)
-    metadata_fieldnames = ['img_idx',
-                           'seg_idx', 
-                           'timestamp', 
+                               camera_trajectory[6,0]*1e-6).strftime('%Y-%m-%d')
+    
+    # Create image metadata csv file
+    metadata_fieldnames = ['seg_idx',
+                           'camera',
+                           'offset', 
+                           'timestamp',
                            'northing',
                            'easting',
                            'down',
-                           'heading',
-                           'dist_to_seg_start']
-            
-    with open(metadata_csv, 'w') as outcsv:
+                           'heading', 
+                           'dist_to_ref']
+    target_dir = 'img/{}_{}m'.format(label, length)
+    img_metadata_csv = (target_dir + '/metadata_{}_{}_{}m.csv'.
+                        format(date_of_run, label, length))
+                    
+    with open(img_metadata_csv, 'w') as outcsv:
         writer = csv.DictWriter(outcsv, metadata_fieldnames)
         writer.writeheader()
-
     
-    # Save all images that are within a specified distance to the start point 
-    # of a trajectory segment
-    max_dist = 1.0
-    max_head_diff = math.radians(10.0)
-    img_idx = 0
-    for camera_idx in range(camera_trajectory.shape[1]):
-        camera_state = camera_trajectory[:,camera_idx]
-        for seg_idx in range(ref_trajectory.shape[1]):
-            seg_start = ref_trajectory[:,seg_idx]
-            dist = np.linalg.norm(camera_state[0:3] - seg_start[0:3])
-            head_diff = math.fabs(camera_state[5] - seg_start[3])
+    
+    # Walk along camera trajectory and save all images belonging to a submap
+    if camera == 'center':
+        ref = 'start'
+        offset = center_offset
+    else:
+        ref = 'center'
+        offset = 0
+        
+    i_pcl = 0
+    ref_pos = np.array([pcl_metadata[i_pcl]['northing_'+ref],
+                        pcl_metadata[i_pcl]['easting_'+ref]])
+    dist_to_ref_prev = sys.maxsize
+    for i_cam in range(camera_trajectory.shape[1]):
+        pos = camera_trajectory[:2,i_cam]
+        dist_to_ref = np.linalg.norm(pos - ref_pos) - offset
+        
+        if dist_to_ref > dist_to_ref_prev:
+            # Save image of previous step as png
+            timestamp = camera_trajectory[6,i_cam-1]
+            seg_idx = pcl_metadata[i_pcl]['seg_idx']
             
-            if dist > max_dist or head_diff > max_head_diff:
-                continue
+            _, pil_image = load_image(img_dir, timestamp, camera_model)
+            pil_image.save(target_dir + '/{}_{}m_{}_{}_{}m_{}.png'.format(
+                           camera, int(center_offset), date_of_run, label, 
+                           length, seg_idx), 'PNG')
             
-            
-            # Load image, save image and metadata
-            _, pil_image = load_image(camera_dir, camera_state[6], camera_model,
-                                      size=(320,240))
-            pil_image.save('img/oxford_{}_{}_{}.png'.format(
-                            date_of_run,int(seg_start[4]),img_idx), 'PNG')
-            
-            with open(metadata_csv, 'a') as outcsv:
+            # Save image metadata
+            with open(img_metadata_csv, 'a') as outcsv:
                 writer = csv.DictWriter(outcsv,fieldnames=metadata_fieldnames)
-                writer.writerow({'img_idx' : img_idx,
-                                 'seg_idx' : int(seg_start[4]), 
-                                 'timestamp' : int(camera_state[6]), 
-                                 'northing' : camera_state[0],
-                                 'easting' : camera_state[1],
-                                 'down' : camera_state[2],
-                                 'heading' : camera_state[5],
-                                 'dist_to_seg_start' : dist})
+                writer.writerow({'seg_idx' : seg_idx,
+                                 'camera' : camera,
+                                 'offset' : center_offset, 
+                                 'timestamp' : timestamp,
+                                 'northing' : camera_trajectory[0,i_cam-1],
+                                 'easting' : camera_trajectory[1,i_cam-1],
+                                 'down' : camera_trajectory[2,i_cam-1],
+                                 'heading' : camera_trajectory[5,i_cam-1], 
+                                 'dist_to_ref' : dist_to_ref_prev})
             
-            img_idx += 1
-                
-            if plot:
-                plt.imshow(pil_image)
-                plt.xlabel('Segment {}'.format(seg_start[4]))
-                plt.xticks([])
-                plt.yticks([])
-                plt.pause(0.05)
-                
+
+            # Set new reference position
+            i_pcl += 1
+            ref_pos = np.array([pcl_metadata[i_pcl]['northing_'+ref],
+                        pcl_metadata[i_pcl]['easting_'+ref]])
+            dist_to_ref_prev = sys.maxsize
+            
+        dist_to_ref_prev = dist_to_ref
+
+
+
+if __name__ == "__main__":
+    data_dir='data/2014-12-02-15-30-08'
+    
+    for label in ['reference', 'random']:
+        for length in [10, 20]:
+            for camera in ['center', 'left', 'right']:
+                save_images_to_pcl(data_dir, label, length, camera)
+            
+            
+            
+            
+            
                 
         
         

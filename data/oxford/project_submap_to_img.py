@@ -37,7 +37,7 @@ if __name__ == '__main__':
     pcl_dir = 'pcl/{}_{}m'.format(args.type, args.length)
     metadata_filename = pcl_dir + '/metadata_2014-12-02_{}_{}m.csv'.format(
                     args.type, args.length)
-    pcl_metadata = get_pcl_metadata(metadata_filename, args.index)
+    pcl_metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
     assert pcl_metadata is not None
     
     # Get start and end time for VO trajectory generation (begin 30m from submap 

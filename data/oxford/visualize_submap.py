@@ -27,7 +27,7 @@ if __name__ == "__main__":
     # Load data 
     submap = np.fromfile(submap_filename, dtype='float32')
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
-    metadata = get_pcl_metadata(metadata_filename, args.index)
+    metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
     assert metadata is not None
     
     # Rescale pointcloud
