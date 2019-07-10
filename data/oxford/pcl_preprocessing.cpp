@@ -31,6 +31,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr read_rawpcl(std::string path) {
     if (infile.good()) {
         infile.seekg(0, infile.end);
         size_t length = infile.tellg();
+        std::cout<<"File length "<<length<<" Bytes\n";
         infile.seekg(0, infile.beg);
         
         if (length%(sizeof(vec_t)*DIM)!=0) {
@@ -100,6 +101,8 @@ void write_rawpcl(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, std::string path) 
 
 int main(int argc, char* argv[]) {
     using namespace pcl;
+
+    std::cout<<"size of vec_t "<<sizeof(vec_t)<<std::endl;
 
     std::string path = "../pcl/sample.rawpcl";
     bool show_vis = false;
