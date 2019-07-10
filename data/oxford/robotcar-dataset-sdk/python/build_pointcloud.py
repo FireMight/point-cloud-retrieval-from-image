@@ -40,6 +40,7 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
         IOError: if scan files are not found.
 
     """
+    print('SDK:build_pointcloud - load required data...')
     if origin_time < 0:
         origin_time = start_time
 
@@ -79,6 +80,7 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
     else:
         reflectance = np.empty((0))
 
+    print('SDK:build_pointcloud - start building the pointcloud...')
     for i in range(0, len(poses)):
         scan_path = os.path.join(lidar_dir, str(timestamps[i]) + '.bin')
         if not os.path.isfile(scan_path):
