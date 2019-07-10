@@ -81,49 +81,63 @@ if __name__ == '__main__':
     
     pcl0 = np.fromfile('data/oxford/pcl/oxford_2014-12-12_0.pcl').reshape(1,3,8192)
     pcl1 = np.fromfile('data/oxford/pcl/oxford_2014-12-12_1.pcl').reshape(1,3,8192)
-    pcl0 = np.append(pcl0,pcl0,0)
-    pcl0 = torch.from_numpy(pcl0).float()
-    pcl0.requires_grad_(False)
-    pcl1 = np.append(pcl1,pcl1,0)
-    pcl1 = torch.from_numpy(pcl1).float()
-    pcl1.requires_grad_(False)
-    pcl =  [pcl0,pcl1]
+#    pcl0 = np.append(pcl0,pcl0,0)
+#    pcl0 = torch.from_numpy(pcl0).float()
+#    pcl0.requires_grad_(False)
+#    pcl1 = np.append(pcl1,pcl1,0)
+#    pcl1 = torch.from_numpy(pcl1).float()
+#    pcl1.requires_grad_(False)
+    pcl =  np.append(pcl0,pcl1,0)
+    pcl = torch.from_numpy(pcl).float()
+    pcl.requires_grad_(False)
     
     
     img_net.to(device)
+    
     pcl_net.to(device)
     
     img_net.train()
     pcl_net.train()
-    optim = torch.optim.Adam(chain(img_net.parameters(),pcl_net.parameters()),lr=1e-3)
+    optim = torch.optim.Adam(chain(img_net.parameters(),pcl_net.parameters()),lr=1e-4)
     optim.zero_grad()
     
-    tl=TripletLoss(0);
+    tl=TripletLoss(5);
     #train
     for i in range(50):
         loss = 0
-        for img,t in img_loader:
-            img = torch.cat((img,img),0)
-            img.requires_grad_(False)
-            img_desc = img_net(img.to(device))
-            pcl_desc,_,_ = pcl_net(pcl[t].to(device))
-            neg_desc,_,_ = pcl_net(pcl[t-1].to(device))
-            loss = tl(img_desc,pcl_desc,neg_desc)
-            loss.backward()
-            optim.step()
+        img = img_dataset[0][0].view(1,3,240,320)
+        for j in range(1,len(img_dataset)):
+            img = torch.cat((img,img_dataset[j][0].view(1,3,240,320)),0)
+        img.requires_grad_(False)
+        
+        with torch.no_grad():
+            x = img_net.vlad.pool(img_net.vlad.encoder(img.to(device)))
+            x = x.view((x.shape[0],32768))
+       
+        img_desc = img_net.fc(x)
+            
+        pcl_desc,_,_ = pcl_net(pcl.to(device))
+        pos = pcl_desc[img_dataset[0][1],:].view(1,1024)
+        neg = pcl_desc[img_dataset[0][1]-1,:].view(1,1024)
+        for j in range(1,len(img_dataset)):
+            t = img_dataset[j][1]
+            pos = torch.cat((pos,pcl_desc[t,:].view(1,1024)),0)
+            neg = torch.cat((neg,pcl_desc[t-1,:].view(1,1024)),0)
+            
+        loss = tl(img_desc,pos,neg,True)
+        print("Loss {}".format(loss))
+        loss.backward()
+        optim.step()
             
         with torch.no_grad():
-            pcl0_desc,_,_ = pcl_net(pcl0.to(device))
-            pcl0_desc = pcl0_desc[0]
-            pcl1_desc,_,_ = pcl_net(pcl1.to(device))
-            pcl1_desc = pcl1_desc[0]
+            pcl_desc,_,_ = pcl_net(pcl.to(device))
             num_correct = 0
             
             for img,t in img_dataset:
                 img = img.view(1,3,240,320)
                 img_desc = img_net(img.to(device))
-                d0 = torch.nn.functional.mse_loss(img_desc,pcl0_desc)
-                d1 = torch.nn.functional.mse_loss(img_desc,pcl1_desc)
+                d0 = torch.nn.functional.mse_loss(img_desc,pcl_desc[0,:].view(1,1024))
+                d1 = torch.nn.functional.mse_loss(img_desc,pcl_desc[1,:].view(1,1024))
                 if(t==0 and d0<d1) or (t==1 and d0>d1):
                     num_correct+=1
             
@@ -134,16 +148,13 @@ if __name__ == '__main__':
     #store descriptors
     optim.zero_grad()
     with torch.no_grad():
-        pcl0_desc,_,_ = pcl_net(pcl0.to(device))
-        pcl0_desc = pcl0_desc[0]
-        pcl1_desc,_,_ = pcl_net(pcl1.to(device))
-        pcl1_desc = pcl1_desc[0]
+        pcl_desc,_,_ = pcl_net(pcl.to(device))
         
         for img,t in test_dataset:
             img = img.view(1,3,240,320)
             img_desc = img_net(img.to(device))
-            d0 = torch.nn.functional.mse_loss(img_desc,pcl0_desc)
-            d1 = torch.nn.functional.mse_loss(img_desc,pcl1_desc)
+            d0 = torch.nn.functional.mse_loss(img_desc,pcl_desc[0,:].view(1,1024))
+            d1 = torch.nn.functional.mse_loss(img_desc,pcl_desc[1,:].view(1,1024))
             print("{} {} {}".format(d0,d1,t))
             if(t==0 and d0<d1) or (t==1 and d0>d1):
                 print("Correct")
