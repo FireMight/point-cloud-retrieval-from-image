@@ -100,7 +100,8 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
         scan = np.dot(np.dot(poses[i], G_posesource_laser), np.vstack([scan, np.ones((1, scan.shape[1]))]))
         pointcloud = np.hstack([pointcloud, scan])
         
-        print('SDK:build_pointcloud - finished {} / {}'.format(i, len(poses)))
+        if i % 1000 == 0:
+            print('SDK:build_pointcloud - finished {} / {}'.format(i, len(poses)))
 
     pointcloud = pointcloud[:, 1:]
     if pointcloud.shape[1] == 0:
