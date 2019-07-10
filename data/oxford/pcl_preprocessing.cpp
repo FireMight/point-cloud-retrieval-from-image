@@ -16,7 +16,7 @@ const float GROUND_THRESH = 0.75f;
 // how many points should be used in the dowsampled submaps
 const std::size_t NUM_POINTS_DOWNSAMPLED = 4096;
 
-using vec_t = double;
+using vec_t = float;
 
 
 /**
@@ -33,13 +33,19 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr read_rawpcl(std::string path) {
         size_t length = infile.tellg();
         infile.seekg(0, infile.beg);
         
-        if (length%(sizeof(vec_t)*DIM)!=0)
+        if (length%(sizeof(vec_t)*DIM)!=0) {
+            infile.close();
             throw std::logic_error("File corrupt or numerical values of wrong type");
+        }
+            
         
         std::size_t num_points = length/(sizeof(vec_t)*DIM);
 
-        if (num_points>MAX_NUM_POINTS)
+        if (num_points>MAX_NUM_POINTS) {
+            infile.close();
             throw std::logic_error("File " + path + " exceeds maximum allowed file size");
+        }
+            
 
         std::cout<<"Reading point cloud from file " + path<<std::endl;
         std::cout<<"Cloud consists of "<<num_points<<" points\n";
@@ -84,6 +90,7 @@ void write_rawpcl(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, std::string path) 
         outfile.write((char*)&rawpcl[0], num_points*DIM*sizeof(vec_t));
         outfile.close();
         std::cout<<"Point cloud written to "<<path<<std::endl;
+        outfile.close();
     }
     else {
         outfile.close();
@@ -95,13 +102,17 @@ int main(int argc, char* argv[]) {
     using namespace pcl;
 
     std::string path = "../pcl/sample.rawpcl";
-    bool show_vis = true;
+    bool show_vis = false;
+    std::string output_path = "";
 
     if(argc>1) {
         path = argv[1];
     }
     if(argc>2) {
-        show_vis = std::atoi(argv[2]);
+        output_path = argv[2];
+    } 
+    if(argc>3) {
+        show_vis = std::atoi(argv[3]);
     } 
     auto raw_cloud = read_rawpcl(path);
 
@@ -191,8 +202,10 @@ int main(int argc, char* argv[]) {
 
 
     // write processed pcl
-    std::size_t ext_index = path.find_last_of(".");
-    path = path.substr(0,ext_index) + "_processed" + path.substr(ext_index);
+    std::size_t ext_index = path.find_last_of("/");
+    if (ext_index==-1) ext_index = 0;
+    else ext_index++;
+    path = output_path + path.substr(ext_index) + ".processed";
     write_rawpcl(downsampled,path);
 
     if(show_vis) {
@@ -215,9 +228,7 @@ int main(int argc, char* argv[]) {
         while(!viewer.wasStopped()) {
             viewer.spinOnce();
         }
-
         
-        // std::cout<<viewer.getViewerPose().matrix();
     }
 
     return 0;
