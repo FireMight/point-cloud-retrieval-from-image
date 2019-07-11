@@ -23,17 +23,19 @@ if __name__ == "__main__":
     
     # Load data 
     submap = np.fromfile(submap_filename, dtype='float32')
+    print(submap)
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
     metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
     assert metadata is not None
     
     # Rescale pointcloud
     submap = submap.reshape(3, submap.shape[0]//3)
-    #center_pos = np.array([metadata['northing_center'],
-    #                       metadata['easting_center'],
-    #                       metadata['down_center']])
-    #center_pos = center_pos[:, np.newaxis]
-    #submap = submap.astype('float64') + center_pos
+    center_pos = np.array([metadata['northing_center'],
+                           metadata['easting_center'],
+                           metadata['down_center']])
+    center_pos = center_pos[:, np.newaxis]
+    submap = submap.astype('float64') + center_pos
+    print(submap)
     
         
     # Plot on map
