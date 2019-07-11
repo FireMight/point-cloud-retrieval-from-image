@@ -105,6 +105,7 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
 
     reflectance = np.concatenate(reflectance)
     pointcloud = np.concatenate(pointcloud, axis=1)
+    pointcloud = pointcloud[:3,:]
     if pointcloud.shape[1] == 0:
         raise IOError("Could not find scan files for given time range in directory " + lidar_dir)
     
