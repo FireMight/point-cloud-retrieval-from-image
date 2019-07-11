@@ -6,7 +6,8 @@ import tarfile
 if __name__ == "__main__":
     run_str = None
     
-    required_data = ['lms_front', 'stereo_centre', 'gps', 'tags', 'vo']
+    #required_data = ['lms_front', 'stereo_centre', 'gps', 'tags', 'vo']
+    required_data = ['mono_left', 'mono_right']
     tar_archieves = {}
     for name in required_data:
         tar_archieves[name] = []

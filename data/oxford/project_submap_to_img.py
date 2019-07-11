@@ -17,20 +17,36 @@ from transform import build_se3_transform
 
 
 if __name__ == '__main__':
-    ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
-    vo_data_file = 'data/2014-12-02-15-30-08/vo/vo.csv'
-    lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
-    lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
-    camera_dir = 'data/2014-12-02-15-30-08/stereo/centre'
-    camera_timestamp_file = 'data/2014-12-02-15-30-08/stereo.timestamps'
-    extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
-    
     parser = argparse.ArgumentParser()
     parser.add_argument('type', type=str)
     parser.add_argument('length', type=int)
     parser.add_argument('index', type=int)
     parser.add_argument('offset', type=float)
+    parser.add_argument('camera', type=str)
     args = parser.parse_args()
+    
+    ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
+    vo_data_file = 'data/2014-12-02-15-30-08/vo/vo.csv'
+    lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
+    lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
+    extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
+    
+    if args.camera == 'left':
+        camera_dir = 'data/2014-12-02-15-30-08/mono_left'
+        camera_timestamp_file = 'data/2014-12-02-15-30-08/mono_left.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_left.txt'
+    elif args.camera == 'right':
+        camera_dir = 'data/2014-12-02-15-30-08/mono_right'
+        camera_timestamp_file = 'data/2014-12-02-15-30-08/mono_right.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_right.txt'
+    elif args.camera == 'center':
+        camera_dir = 'data/2014-12-02-15-30-08/stereo/centre'
+        camera_timestamp_file = 'data/2014-12-02-15-30-08/stereo.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/stereo.txt'
+    else:
+        raise ValueError('Wrong camera type', args.camera)
+    
+    
     
     # Get trajectory and submap metadata
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
@@ -63,7 +79,7 @@ if __name__ == '__main__':
         
     # Get timestamp of image considering offset
     i_img = i_start
-    if args.offset > 0:
+    if args.camera == 'center' and args.offset > 0:
         dist_to_img = args.offset
         prev_pos = trajectory_ned[:3,i_start]
         for i_img in range(i_start-1,0,-1):
@@ -72,6 +88,16 @@ if __name__ == '__main__':
             prev_pos = curr_pos
             if dist_to_img < 0:
                 break
+    elif args.camera in ['left', 'right']:
+        dist_to_img = args.length / 2
+        prev_pos = trajectory_ned[:3,i_start]
+        for i_img in range(i_start+1,trajectory_ned.shape[1]):
+            curr_pos = trajectory_ned[[0,1,2],i_img]
+            dist_to_img -= np.linalg.norm(prev_pos - curr_pos)
+            prev_pos = curr_pos
+            if dist_to_img < 0:
+                break
+        
         
     
     # Build pointcloud based on visual odometry
@@ -96,11 +122,9 @@ if __name__ == '__main__':
     
     submap = pcl_trafo(submap_ned, trans_oldref=-reference_state[:3], 
                        rot=-reference_state[3:])
-    
-    
+        
     # Get camera transformation
-    #### TODO Change for side-looking cameras ####
-    with open('robotcar-dataset-sdk/extrinsics/stereo.txt') as extrinsics_file:
+    with open(camera_extrinsics) as extrinsics_file:
         extrinsics = [float(x) for x in next(extrinsics_file).split(' ')]
 
     G_camera_vehicle = build_se3_transform(extrinsics)

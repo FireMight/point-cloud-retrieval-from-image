@@ -371,7 +371,8 @@ def plot_pcl_traj(pointcloud_ned, reflectance=None, trajectory_ned=None):
     ax.set_xlim(-y_range[1], -y_range[0])
     ax.set_ylim(-x_range[1], -x_range[0])
     ax.set_zlim(-z_range[1], -z_range[0])
-    ax.view_init(50, 0) # elevation, azimuth
+    #ax.view_init(50, 0) # elevation, azimuth
+    ax.view_init(30, 50) # elevation, azimuth
     plt.show()
 
 

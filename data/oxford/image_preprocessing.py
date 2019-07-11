@@ -148,16 +148,29 @@ def save_images_to_pcl(data_dir, ins_data_file, label, length, camera,
         offset = 0
         
     i_pcl = 0
+    i_min = 0
+    dist_min = 1.0e9
     ref_pos = np.array([pcl_metadata[i_pcl]['northing_'+ref],
                         pcl_metadata[i_pcl]['easting_'+ref]])
-    dist_to_ref_prev = sys.maxsize
     for i_cam in range(camera_trajectory.shape[1]):
         pos = camera_trajectory[:2,i_cam]
-        dist_to_ref = np.linalg.norm(pos - ref_pos) - offset
+        dist_to_ref = np.linalg.norm(pos - ref_pos) 
         
-        if dist_to_ref > dist_to_ref_prev:
-            # Save image of previous step as png
-            timestamp = camera_trajectory[6,i_cam-1]
+        print(dist_to_ref)
+        
+        if dist_to_ref < dist_min:
+            i_min = i_cam
+            dist_min = dist_to_ref
+        
+        if dist_to_ref > dist_min + 5.0:
+            
+            
+            #### TODO go back to offset or find better solution... ####
+            
+            
+            print('Save image {} with dist {}'.format(i_min, dist_min))
+            # Save image of step with minimum dist to reference as png
+            timestamp = camera_trajectory[6,i_min]
             seg_idx = pcl_metadata[i_pcl]['seg_idx']
             
             _, pil_image = load_image(img_dir, timestamp, camera_model)
@@ -171,31 +184,34 @@ def save_images_to_pcl(data_dir, ins_data_file, label, length, camera,
                 writer.writerow({'seg_idx' : seg_idx,
                                  'camera' : camera,
                                  'offset' : center_offset, 
-                                 'timestamp' : timestamp,
-                                 'northing' : camera_trajectory[0,i_cam-1],
-                                 'easting' : camera_trajectory[1,i_cam-1],
-                                 'down' : camera_trajectory[2,i_cam-1],
-                                 'heading' : camera_trajectory[5,i_cam-1], 
-                                 'dist_to_ref' : dist_to_ref_prev})
+                                 'timestamp' : int(timestamp),
+                                 'northing' : camera_trajectory[0,i_min],
+                                 'easting' : camera_trajectory[1,i_min],
+                                 'down' : camera_trajectory[2,i_min],
+                                 'heading' : camera_trajectory[5,i_min], 
+                                 'dist_to_ref' : dist_min})
             
 
             # Set new reference position
             i_pcl += 1
             ref_pos = np.array([pcl_metadata[i_pcl]['northing_'+ref],
                         pcl_metadata[i_pcl]['easting_'+ref]])
-            dist_to_ref_prev = sys.maxsize
-            
-        dist_to_ref_prev = dist_to_ref
+            dist_min = 1.0e9
+
 
 
 
 if __name__ == "__main__":
     data_dir='data/2014-12-02-15-30-08'
+    ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
     
-    for label in ['reference', 'random']:
+    #for label in ['reference', 'random']:
+    for label in ['reference']:
         for length in [10, 20]:
             for camera in ['center', 'left', 'right']:
-                save_images_to_pcl(data_dir, label, length, camera)
+            #for camera in ['left', 'right']:
+                save_images_to_pcl(data_dir, ins_data_file, label, length, camera,
+                                   center_offset=0.0)
             
             
             

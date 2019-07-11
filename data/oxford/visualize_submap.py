@@ -9,20 +9,17 @@ from ned_pcl_to_file import import_trajectory_ned, get_pcl_metadata, plot_pcl_tr
 
 
 if __name__ == "__main__":
-    ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
-    lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
+    ins_data_file = 'data/reference/gps/ins.csv'
+    lidar_timestamp_file = 'data/reference/lms_front.timestamps'
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('type', type=str)
     parser.add_argument('length', type=int)
     parser.add_argument('index', type=int)
     args = parser.parse_args()
     
-    pcl_dir = 'pcl/{}_{}m'.format(args.type, args.length)
-    submap_filename = pcl_dir + '/submap_2014-12-02_{}_{}m_{}.rawpcl'.format(
-                    args.type, args.length, args.index)
-    metadata_filename = pcl_dir + '/metadata_2014-12-02_{}_{}m.csv'.format(
-                    args.type, args.length)
+    pcl_dir = 'data/reference/submaps_{}m'.format(args.length)
+    submap_filename = pcl_dir + '/submap_{}.rawpcl'.format(args.index)
+    metadata_filename = pcl_dir + '/metadata.csv'
     
     # Load data 
     submap = np.fromfile(submap_filename, dtype='float32')
