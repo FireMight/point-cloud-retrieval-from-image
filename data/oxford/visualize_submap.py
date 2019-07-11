@@ -29,11 +29,11 @@ if __name__ == "__main__":
     
     # Rescale pointcloud
     submap = submap.reshape(3, submap.shape[0]//3)
-    center_pos = np.array([metadata['northing_center'],
-                           metadata['easting_center'],
-                           metadata['down_center']])
-    center_pos = center_pos[:, np.newaxis]
-    submap = submap.astype('float64') + center_pos
+    #center_pos = np.array([metadata['northing_center'],
+    #                       metadata['easting_center'],
+    #                       metadata['down_center']])
+    #center_pos = center_pos[:, np.newaxis]
+    #submap = submap.astype('float64') + center_pos
     
         
     # Plot on map
