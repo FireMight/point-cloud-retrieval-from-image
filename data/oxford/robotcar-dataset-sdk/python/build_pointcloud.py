@@ -40,6 +40,7 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
         IOError: if scan files are not found.
 
     """
+    print('SDK:build_pointcloud - load required data...')
     if origin_time < 0:
         origin_time = start_time
 
@@ -73,12 +74,13 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
         # sensor is VO, which is located at the main vehicle frame
         poses = interpolate_vo_poses(poses_file, timestamps, origin_time)
 
-    pointcloud = np.array([[0], [0], [0], [0]])
+    pointcloud = []
     if lidar == 'ldmrs':
         reflectance = None
     else:
-        reflectance = np.empty((0))
+        reflectance = []
 
+    print('SDK:build_pointcloud - start building the pointcloud...')
     for i in range(0, len(poses)):
         scan_path = os.path.join(lidar_dir, str(timestamps[i]) + '.bin')
         if not os.path.isfile(scan_path):
@@ -92,13 +94,17 @@ def build_pointcloud(lidar_dir, poses_file, extrinsics_dir, start_time, end_time
 
         if lidar != 'ldmrs':
             # LMS scans are tuples of (x, y, reflectance)
-            reflectance = np.concatenate((reflectance, np.ravel(scan[2, :])))
+            reflectance.append(np.ravel(scan[2, :]))
             scan[2, :] = np.zeros((1, scan.shape[1]))
 
         scan = np.dot(np.dot(poses[i], G_posesource_laser), np.vstack([scan, np.ones((1, scan.shape[1]))]))
-        pointcloud = np.hstack([pointcloud, scan])
+        pointcloud.append(scan)
+        
+        if i % 1000 == 0:
+            print('SDK:build_pointcloud - finished {} / {}'.format(i, len(poses)))
 
-    pointcloud = pointcloud[:, 1:]
+    reflectance = np.concatenate(reflectance)
+    pointcloud = np.concatenate(pointcloud, axis=1)
     if pointcloud.shape[1] == 0:
         raise IOError("Could not find scan files for given time range in directory " + lidar_dir)
     
