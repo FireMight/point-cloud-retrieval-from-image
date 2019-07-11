@@ -18,30 +18,29 @@ from transform import build_se3_transform
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('type', type=str)
     parser.add_argument('length', type=int)
     parser.add_argument('index', type=int)
     parser.add_argument('offset', type=float)
     parser.add_argument('camera', type=str)
     args = parser.parse_args()
     
-    ins_data_file = 'data/2014-12-02-15-30-08/gps/ins.csv'
-    vo_data_file = 'data/2014-12-02-15-30-08/vo/vo.csv'
-    lidar_dir = 'data/2014-12-02-15-30-08/lms_front'
-    lidar_timestamp_file = 'data/2014-12-02-15-30-08/lms_front.timestamps'
+    ins_data_file = 'data/reference/gps/ins.csv'
+    vo_data_file = 'data/reference/vo/vo.csv'
+    lidar_dir = 'data/reference/lms_front'
+    lidar_timestamp_file = 'data/reference/lms_front.timestamps'
     extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
     
     if args.camera == 'left':
-        camera_dir = 'data/2014-12-02-15-30-08/mono_left'
-        camera_timestamp_file = 'data/2014-12-02-15-30-08/mono_left.timestamps'
+        camera_dir = 'data/reference/mono_left'
+        camera_timestamp_file = 'data/reference/mono_left.timestamps'
         camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_left.txt'
     elif args.camera == 'right':
-        camera_dir = 'data/2014-12-02-15-30-08/mono_right'
-        camera_timestamp_file = 'data/2014-12-02-15-30-08/mono_right.timestamps'
+        camera_dir = 'data/reference/mono_right'
+        camera_timestamp_file = 'data/reference/mono_right.timestamps'
         camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_right.txt'
     elif args.camera == 'center':
-        camera_dir = 'data/2014-12-02-15-30-08/stereo/centre'
-        camera_timestamp_file = 'data/2014-12-02-15-30-08/stereo.timestamps'
+        camera_dir = 'data/reference/stereo/centre'
+        camera_timestamp_file = 'data/reference/stereo.timestamps'
         camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/stereo.txt'
     else:
         raise ValueError('Wrong camera type', args.camera)
@@ -50,9 +49,9 @@ if __name__ == '__main__':
     
     # Get trajectory and submap metadata
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
-    pcl_dir = 'pcl/{}_{}m'.format(args.type, args.length)
-    metadata_filename = pcl_dir + '/metadata_2014-12-02_{}_{}m.csv'.format(
-                    args.type, args.length)
+    pcl_dir = 'data/reference/submaps_{}m'.format(args.length)
+    submap_filename = pcl_dir + '/submap_{}.rawpcl'.format(args.index)
+    metadata_filename = pcl_dir + '/metadata.csv'
     pcl_metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
     assert pcl_metadata is not None
     
@@ -122,7 +121,7 @@ if __name__ == '__main__':
     
     submap = pcl_trafo(submap_ned, trans_oldref=-reference_state[:3], 
                        rot=-reference_state[3:])
-        
+            
     # Get camera transformation
     with open(camera_extrinsics) as extrinsics_file:
         extrinsics = [float(x) for x in next(extrinsics_file).split(' ')]
