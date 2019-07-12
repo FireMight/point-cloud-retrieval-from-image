@@ -15,42 +15,17 @@ sys.path.insert(0, os.path.join(os.getcwd(),'robotcar-dataset-sdk/python'))
 import build_pointcloud as sdk_pcl
 from transform import build_se3_transform
 
+ins_data_file = 'data/reference/gps/ins.csv'
+vo_data_file = 'data/reference/vo/vo.csv'
+lidar_dir = 'data/reference/lms_front'
+lidar_timestamp_file = 'data/reference/lms_front.timestamps'
+extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('length', type=int)
-    parser.add_argument('index', type=int)
-    parser.add_argument('offset', type=float)
-    parser.add_argument('camera', type=str)
-    args = parser.parse_args()
-    
-    ins_data_file = 'data/reference/gps/ins.csv'
-    vo_data_file = 'data/reference/vo/vo.csv'
-    lidar_dir = 'data/reference/lms_front'
-    lidar_timestamp_file = 'data/reference/lms_front.timestamps'
-    extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
-    
-    if args.camera == 'left':
-        camera_dir = 'data/reference/mono_left'
-        camera_timestamp_file = 'data/reference/mono_left.timestamps'
-        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_left.txt'
-    elif args.camera == 'right':
-        camera_dir = 'data/reference/mono_right'
-        camera_timestamp_file = 'data/reference/mono_right.timestamps'
-        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_right.txt'
-    elif args.camera == 'center':
-        camera_dir = 'data/reference/stereo/centre'
-        camera_timestamp_file = 'data/reference/stereo.timestamps'
-        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/stereo.txt'
-    else:
-        raise ValueError('Wrong camera type', args.camera)
-    
-    
-    
+
+def generate_vo_submap(args):
     # Get trajectory and submap metadata
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
     pcl_dir = 'data/reference/submaps_{}m'.format(args.length)
-    submap_filename = pcl_dir + '/submap_{}.rawpcl'.format(args.index)
     metadata_filename = pcl_dir + '/metadata.csv'
     pcl_metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
     assert pcl_metadata is not None
@@ -58,6 +33,7 @@ if __name__ == '__main__':
     # Get start and end time for VO trajectory generation (begin 30m from submap 
     # start, end where submap ends)
     i_start = np.argwhere(trajectory_ned[6,:] == pcl_metadata['timestamp_start'])[0,0]
+    
     dist_to_vo_start = 30
     prev_pos = trajectory_ned[:3,i_start]
     for i_vo_start in range(i_start-1,0,-1):
@@ -121,6 +97,42 @@ if __name__ == '__main__':
     
     submap = pcl_trafo(submap_ned, trans_oldref=-reference_state[:3], 
                        rot=-reference_state[3:])
+    
+    return i_img, submap
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('length', type=int)
+    parser.add_argument('index', type=int)
+    parser.add_argument('offset', type=float)
+    parser.add_argument('camera', type=str)
+    args = parser.parse_args()
+    
+    use_processed = False
+    
+    
+    if args.camera == 'left':
+        camera_dir = 'data/reference/mono_left'
+        camera_timestamp_file = 'data/reference/mono_left.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_left.txt'
+    elif args.camera == 'right':
+        camera_dir = 'data/reference/mono_right'
+        camera_timestamp_file = 'data/reference/mono_right.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/mono_right.txt'
+    elif args.camera == 'center':
+        camera_dir = 'data/reference/stereo/centre'
+        camera_timestamp_file = 'data/reference/stereo.timestamps'
+        camera_extrinsics = 'robotcar-dataset-sdk/extrinsics/stereo.txt'
+    else:
+        raise ValueError('Wrong camera type', args.camera)
+    
+    
+    if use_processed:
+        pass
+    else:
+        i_img, submap = generate_vo_submap(args) 
+    
+    
             
     # Get camera transformation
     with open(camera_extrinsics) as extrinsics_file:
@@ -134,7 +146,7 @@ if __name__ == '__main__':
     img_data = import_camera_trajectory(camera_timestamp_file, ins_data_file, 
                                         camera_dir)
     camera_trajectory, camera_model = img_data[0], img_data[1]
-    camera_state = camera_trajectory[:,i_start]
+    camera_state = camera_trajectory[:,i_img] #Was i_start, not correct?
     image, pil_image = load_image(camera_dir, camera_state[6], camera_model)
     
     # Project points into image
