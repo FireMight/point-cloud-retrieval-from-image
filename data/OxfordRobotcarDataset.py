@@ -90,9 +90,9 @@ class OxfordRobotcarDataset(Dataset):
         return min_sample
     
     def getCenterPos(self, idx):
-        return [self.metadata[idx]['northing_center'],
-                self.metadata[idx]['easting_center'],
-                self.metadata[idx]['down_center']]
+        return np.array([self.metadata[idx]['northing_center'],
+                         self.metadata[idx]['easting_center'],
+                         self.metadata[idx]['down_center']])
             
 
     def __getitem__(self,idx):        
