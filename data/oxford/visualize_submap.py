@@ -18,7 +18,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     pcl_dir = 'data/reference/submaps_{}m'.format(args.length)
-    submap_filename = pcl_dir + '/submap_{}.rawpcl'.format(args.index)
+    submap_filename = pcl_dir + '/submap_{}.rawpcl.processed'.format(args.index)
     metadata_filename = pcl_dir + '/metadata.csv'
     
     # Load data 

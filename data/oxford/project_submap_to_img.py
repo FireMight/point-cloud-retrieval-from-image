@@ -22,6 +22,61 @@ lidar_timestamp_file = 'data/reference/lms_front.timestamps'
 extrinsics_dir = 'robotcar-dataset-sdk/extrinsics'
 
 
+def load_processed_submap(args):
+    pcl_dir = 'data/reference/submaps_{}m'.format(args.length)
+    submap_filename = pcl_dir + '/submap_{}.rawpcl.processed'.format(args.index)
+    metadata_filename = pcl_dir + '/metadata.csv'
+    
+    # Load data 
+    submap_ned = np.fromfile(submap_filename, dtype='float32')
+    trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
+    pcl_metadata = get_pcl_metadata(metadata_filename, seg_idx=args.index)
+    assert pcl_metadata is not None
+    
+    # Rescale pointcloud
+    submap_ned = submap_ned.reshape(3, submap_ned.shape[0]//3)
+    center_pos = np.array([pcl_metadata['northing_center'],
+                           pcl_metadata['easting_center'],
+                           pcl_metadata['down_center']])
+    center_pos = center_pos[:, np.newaxis]
+    submap_ned = submap_ned.astype('float64') + center_pos
+    
+    # Add row of ones to pcl coordinates for trafo
+    submap_ned = np.vstack((submap_ned, np.ones((1, submap_ned.shape[1]))))
+    
+    
+    # Get image position
+    i_start = np.argwhere(trajectory_ned[6,:] == pcl_metadata['timestamp_start'])[0,0]
+    
+    # Get timestamp of image considering offset
+    i_img = i_start
+    if args.camera == 'center' and args.offset > 0:
+        dist_to_img = args.offset
+        prev_pos = trajectory_ned[:3,i_start]
+        for i_img in range(i_start-1,0,-1):
+            curr_pos = trajectory_ned[[0,1,2],i_img]
+            dist_to_img -= np.linalg.norm(prev_pos - curr_pos)
+            prev_pos = curr_pos
+            if dist_to_img < 0:
+                break
+    elif args.camera in ['left', 'right']:
+        dist_to_img = args.length / 2
+        prev_pos = trajectory_ned[:3,i_start]
+        for i_img in range(i_start+1,trajectory_ned.shape[1]):
+            curr_pos = trajectory_ned[[0,1,2],i_img]
+            dist_to_img -= np.linalg.norm(prev_pos - curr_pos)
+            prev_pos = curr_pos
+            if dist_to_img < 0:
+                break
+    
+    # Transform submap to vehicle reference system
+    reference_state = trajectory_ned[:,i_img].flatten()
+    submap = pcl_trafo(submap_ned, trans_oldref=-reference_state[:3], 
+                       rot=-reference_state[3:])
+    
+    
+    return i_img, submap
+
 def generate_vo_submap(args):
     # Get trajectory and submap metadata
     trajectory_ned = import_trajectory_ned(ins_data_file, lidar_timestamp_file)
@@ -98,6 +153,8 @@ def generate_vo_submap(args):
     submap = pcl_trafo(submap_ned, trans_oldref=-reference_state[:3], 
                        rot=-reference_state[3:])
     
+    print(submap)
+    
     return i_img, submap
 
 if __name__ == '__main__':
@@ -128,7 +185,7 @@ if __name__ == '__main__':
     
     
     if use_processed:
-        pass
+        i_img, submap = load_processed_submap(args)
     else:
         i_img, submap = generate_vo_submap(args) 
     

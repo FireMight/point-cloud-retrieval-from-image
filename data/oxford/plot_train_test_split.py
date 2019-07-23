@@ -43,9 +43,9 @@ if __name__ == '__main__':
                 trajectory_test = np.append(trajectory_test, 
                                             curr_pos.reshape(3,1), axis=1)
     
-    plt.scatter(trajectory_train[1,:], trajectory_train[0,:], c='blue', s=0.5, 
+    plt.scatter(trajectory_train[1,:], trajectory_train[0,:], c='green', s=0.5, 
                 marker='.')
-    plt.scatter(trajectory_test[1,:], trajectory_test[0,:], c='orange', s=0.5, 
+    plt.scatter(trajectory_test[1,:], trajectory_test[0,:], c='red', s=0.5, 
                 marker='.')
     plt.show()
         
