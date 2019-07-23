@@ -72,6 +72,12 @@ class OxfordRobotcarDataset(Dataset):
         self.pcl_net.train(old_mode)
         
         return min_sample
+    
+    def getCenterPos(self, idx):
+        segment_metadata = self.pcl_coord[idx]
+        return [segment_metadata['northing_center'],
+                segment_metadata['easting_center'],
+                segment_metadata['down_center']]
             
 
     def __getitem__(self,idx):        
