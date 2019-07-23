@@ -22,11 +22,27 @@ class OxfordRobotcarDataset(Dataset):
         self.pcl_net = pcl_net
         self.img_net = img_net
         self.device = device
+        self.metadata = []
+        self.indices = []
         with open(pcl_dir+'metadata.csv') as csvfile:
-            self.pcl_coord = csv.DictReader(csvfile)
-            self.indices = []
-            for row in self.pcl_coord:
-                self.indices.append(row['seg_idx'])
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                metadata = {}
+                metadata['seg_idx'] = int(row['seg_idx'])
+                metadata['timestamp_start'] = int(row['timestamp_start'])
+                metadata['northing_start'] = float(row['northing_start'])
+                metadata['easting_start'] = float(row['easting_start'])
+                metadata['down_start'] = float(row['down_start'])
+                metadata['heading_start'] = float(row['heading_start'])
+                metadata['timestamp_center'] = int(row['timestamp_center'])
+                metadata['northing_center'] = float(row['northing_center'])
+                metadata['easting_center'] = float(row['easting_center'])
+                metadata['down_center'] = float(row['down_center'])
+                metadata['heading_center'] = float(row['heading_center'])
+                
+                self.metadata.append(metadata)
+                self.indices.append(int(row['seg_idx']))
+                
         
     def __len__(self):
         return len(self.indices)
@@ -74,10 +90,9 @@ class OxfordRobotcarDataset(Dataset):
         return min_sample
     
     def getCenterPos(self, idx):
-        segment_metadata = self.pcl_coord[idx]
-        return [segment_metadata['northing_center'],
-                segment_metadata['easting_center'],
-                segment_metadata['down_center']]
+        return [self.metadata[idx]['northing_center'],
+                self.metadata[idx]['easting_center'],
+                self.metadata[idx]['down_center']]
             
 
     def __getitem__(self,idx):        
