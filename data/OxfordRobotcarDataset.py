@@ -1,6 +1,7 @@
 import os
 import csv
 import random
+from itertools import chain
 
 import numpy as np
 from PIL import Image
@@ -14,7 +15,7 @@ class OxfordRobotcarDataset(Dataset):
        potentially a negative submap.
     """
     
-    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', pcl_net=None, img_net=None, transform=None):
+    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', pcl_net=None, img_net=None):
         self.pcl_dir = pcl_dir
         self.img_dir = img_dir
         self.tuple_type = tuple_type
@@ -46,26 +47,29 @@ class OxfordRobotcarDataset(Dataset):
     def getNegative(self,idx,anchor):
         min_dist = 1000000000
         min_sample = None
-        indices = []
-        if idx>100:
-            indices.extend(list(range(0,idx-100)))
-        if idx<self.__len__()-100:
-            indices.extend(list(range(idx+100,self.__len__())))
-        
+        indices = range(0,idx-50)
+        indices = chain(indices, range(idx+50,self.__len()__))
         samp = random.sample(indices,10)
-        with self.img_net.eval() and torch.no_grad():
+        
+        old_mode = self.img_net.training
+        self.img_net.eval()
+        with torch.no_grad():
             a_size = anchor.size()
             img_desc = self.img_net(anchor.view(1,a_size[0],a_size[1],a_size[2]))
-            
-        for i in samp:
-            neg = self.getPositive(i)
-            with self.pcl_net.eval() and torch.no_grad():
+        self.img_net.train(old_mode)
+        
+        old_mode = self.pcl_net.training
+        self.pcl_net.eval()
+        with torch.no_grad():
+            for i in samp:
+                neg = self.getPositive(i)
                 n_size = neg.size()
                 neg_desc,_,_ = self.pcl_net(neg.view(1,n_size[0],n_size[1]))
-            dist = (img_desc-neg_desc).norm()
-            if (dist<min_dist):
-                min_sample = neg
-                min_dist = dist
+                dist = (img_desc-neg_desc).norm()
+                if (dist<min_dist):
+                    min_sample = neg
+                    min_dist = dist
+        self.pcl_net.train(old_mode)
         
         return min_sample
             
