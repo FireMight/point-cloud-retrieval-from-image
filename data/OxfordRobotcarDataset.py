@@ -48,7 +48,7 @@ class OxfordRobotcarDataset(Dataset):
         min_dist = 1000000000
         min_sample = None
         indices = range(0,idx-50)
-        indices = chain(indices, range(idx+50,self.__len()__))
+        indices = chain(indices, range(idx+50,self.__len__()))
         samp = random.sample(indices,10)
         
         old_mode = self.img_net.training
