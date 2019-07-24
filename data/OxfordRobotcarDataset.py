@@ -17,7 +17,7 @@ class OxfordRobotcarDataset(Dataset):
        potentially a negative submap.
     """
     
-    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', use_pn_vlad=False, cache_pcl=True):
+    def __init__(self, pcl_dir, img_dir, device, use_triplet=False, use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
         self.img_dir = img_dir
         self.device = device
@@ -47,7 +47,7 @@ class OxfordRobotcarDataset(Dataset):
             self._init_pcl_cache()
 
         # Placeholder for descriptor NN search when using triplet loss
-        self.tuple_type = tuple_type
+        self.use_triplet = use_triplet
         self.img_descs = [None for _ in range(len(self.metadata))]
         self.pcl_descs = [None for _ in range(len(self.metadata))]
         self.index_mapping = [] # Holds idx for every descriptor in the tree
@@ -65,7 +65,7 @@ class OxfordRobotcarDataset(Dataset):
         img = self._get_anchor(idx)
         pcl = self._get_positive(idx,self.cache_pcl)
         neg = torch.Tensor()
-        if self.tuple_type=='triplet':
+        if self.use_triplet:
             neg = self._get_negative(idx,self.cache_pcl)
         
         return idx, img, pcl, neg
@@ -79,12 +79,6 @@ class OxfordRobotcarDataset(Dataset):
                     
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
-        
-    def set_use_triplet(self, use_triplet):
-        if use_triplet:
-            self.tuple_type = 'triplet'
-        else:
-            self.tuple_type = 'simple'
             
     def get_center_pos(self, idx):
         seg_idx = self.metadata[idx]['seg_idx']
