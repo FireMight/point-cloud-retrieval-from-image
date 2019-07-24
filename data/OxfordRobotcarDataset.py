@@ -67,7 +67,7 @@ class OxfordRobotcarDataset(Dataset):
         if self.tuple_type=='triplet':
             neg = self._get_negative(idx)
         
-        return img, pcl, neg
+        return idx, img, pcl, neg
     
     def map_indices(self, train_indices, val_indices, test_indices):
         self.seg_indices['train'] = train_indices
@@ -112,8 +112,10 @@ class OxfordRobotcarDataset(Dataset):
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
                 
-    def _get_negative(self,idx_anchor, d_min=50.0):
+    def _get_negative(self,idx, d_min=50.0):
         # Find most similar pcl descriptor indices
+        idx_anchors = 
+        
         desc_anchor = self.img_descs[idx_anchor]
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
