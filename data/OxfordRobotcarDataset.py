@@ -112,7 +112,7 @@ class OxfordRobotcarDataset(Dataset):
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
                 
-    def _get_negative(self,idx, d_min=50.0):
+    def _get_negative(self,idx, d_min=5.0):
         # Find most similar pcl descriptor indices
         desc_anchor = self.img_descs[idx]
         assert desc_anchor is not None
