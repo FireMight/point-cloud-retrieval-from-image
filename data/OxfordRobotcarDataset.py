@@ -17,7 +17,7 @@ class OxfordRobotcarDataset(Dataset):
        potentially a negative submap.
     """
     
-    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', use_pn_vlad=False, cache_pcl=True):
+    def __init__(self, pcl_dir, img_dir, device, use_triplet=False, use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
         self.img_dir = img_dir
         self.device = device
@@ -47,9 +47,10 @@ class OxfordRobotcarDataset(Dataset):
             self._init_pcl_cache()
 
         # Placeholder for descriptor NN search when using triplet loss
-        self.tuple_type = tuple_type
-        self.img_descs = []
-        self.pcl_descs = []
+        self.use_triplet = use_triplet
+        self.img_descs = [None for _ in range(len(self.metadata))]
+        self.pcl_descs = [None for _ in range(len(self.metadata))]
+        self.index_mapping = [] # Holds idx for every descriptor in the tree
         self.desc_tree = None 
             
     def _init_pcl_cache(self):
@@ -63,31 +64,24 @@ class OxfordRobotcarDataset(Dataset):
     def __getitem__(self,idx):        
         img = self._get_anchor(idx)
         pcl = self._get_positive(idx,self.cache_pcl)
-        if self.tuple_type=='triplet':
-            neg = self._get_negative(idx)
-            return img, pcl, neg
+        neg = torch.Tensor()
+        if self.use_triplet:
+            neg = self._get_negative(idx,self.cache_pcl)
         
-        return img, pcl
-    
-    def map_indices(self, train_indices, val_indices, test_indices):
-        self.seg_indices['train'] = train_indices
-        self.seg_indices['val'] = val_indices
-        self.seg_indices['test'] = test_indices
+        return idx, img, pcl, neg
         
-    def update_train_descriptors(self, img_descs, pcl_descs):
-        self.img_descs = img_descs
-        self.pcl_descs = pcl_descs
+    def update_train_descriptors(self, indices, img_descs, pcl_descs):
+        self.index_mapping = []
+        for idx, img_desc, pcl_desc in zip(indices, img_descs, pcl_descs):
+            self.img_descs[idx] = img_desc
+            self.pcl_descs[idx] = pcl_desc
+            self.index_mapping.append(idx) 
+                    
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
-        
-    def set_use_triplet(self, use_triplet):
-        if use_triplet:
-            self.tuple_type = 'triplet'
-        else:
-            self.tuple_type = 'simple'
             
-    def get_center_pos(self, subset, idx):
-        seg_idx = self.seg_indices[subset][idx]
+    def get_center_pos(self, idx):
+        seg_idx = self.metadata[idx]['seg_idx']
         return np.array([self.metadata[seg_idx]['northing_center'],
                          self.metadata[seg_idx]['easting_center'],
                          self.metadata[seg_idx]['down_center']])
@@ -112,15 +106,19 @@ class OxfordRobotcarDataset(Dataset):
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
                 
-    def _get_negative(self,idx_anchor, d_min=50.0):
+    def _get_negative(self,idx, d_min=50.0,cached=False):
         # Find most similar pcl descriptor indices
-        desc_anchor = self.img_descs[idx_anchor]
+        desc_anchor = self.img_descs[idx]
+        assert desc_anchor is not None
+        d_min = min(d_min, len(self.index_mapping)-2)
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
+                
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
+        indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim[0]]
         
         # Get most similar pcl that is not within minimum distance
-        seg_idx_anchor = self.indices['train'][idx_anchor]
-        seg_indices_sim = [self.indices['train'][idx_sim] for idx_sim in indices_sim]
+        seg_idx_anchor = self.metadata[idx]['seg_idx']
+        seg_indices_sim = [self.metadata[idx_sim]['seg_idx'] for idx_sim in indices_sim]
         
         idx_sim = -1
         for i, seg_idx_sim in enumerate(seg_indices_sim):
@@ -130,4 +128,16 @@ class OxfordRobotcarDataset(Dataset):
             
         # Return stored pointcloud descriptor
         assert idx_sim > -1
-        return self.pcl_descs[idx_sim]
+        
+        if cached:
+            return self.pcl_cache[idx_sim]
+        else:    
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.metadata[idx_sim]['seg_idx'])+'.rawpcl.processed')
+            pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
+            if self.use_pn_vlad:
+                pcl = pcl.transpose()
+                pcl = pcl.reshape(1,-1,3)
+            pcl = torch.from_numpy(pcl).to(self.device)
+            return pcl
+            
+    
