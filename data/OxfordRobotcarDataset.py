@@ -15,7 +15,7 @@ class OxfordRobotcarDataset(Dataset):
        potentially a negative submap.
     """
     
-    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', pcl_net=None, img_net=None):
+    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', pcl_net=None, img_net=None, use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
         self.img_dir = img_dir
         self.tuple_type = tuple_type
@@ -24,6 +24,8 @@ class OxfordRobotcarDataset(Dataset):
         self.device = device
         self.metadata = []
         self.indices = []
+        self.use_pn_vlad = use_pn_vlad
+        self.cache_pcl = cache_pcl
         with open(pcl_dir+'metadata.csv') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
@@ -42,8 +44,15 @@ class OxfordRobotcarDataset(Dataset):
                 
                 self.metadata.append(metadata)
                 self.indices.append(int(row['seg_idx']))
+                # cache pcls in RAM, low memory usage - 10000 pcls would take up about 0.5 GB
+        if self.cache_pcl:
+            self._init_pcl_cache()
                 
-        
+    def _init_pcl_cache(self):
+        self.pcl_cache = [None]*self.__len__()
+        for i in range(self.__len__()):
+            self.pcl_cache[i] = self.getPositive(i)
+    
     def __len__(self):
         return len(self.indices)
     
@@ -55,11 +64,17 @@ class OxfordRobotcarDataset(Dataset):
         img_file.close()
         return img
     
-    def getPositive(self,idx):
-        pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.indices[idx])+'.rawpcl.processed')
-        pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,4096)
-        pcl = torch.from_numpy(pcl).to(self.device)
-        return pcl
+    def getPositive(self,idx,cached=False):
+        if cached:
+            return self.pcl_cache[idx]
+        else:    
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.indices[idx])+'.rawpcl.processed')
+            pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
+            if self.use_pn_vlad:
+                pcl = pcl.transpose()
+                pcl = pcl.reshape(1,-1,3)
+            pcl = torch.from_numpy(pcl).to(self.device)
+            return pcl
     
     def getNegative(self,idx,anchor):
         min_dist = 1000000000
@@ -98,7 +113,7 @@ class OxfordRobotcarDataset(Dataset):
 
     def __getitem__(self,idx):        
         img = self.getAnchor(idx)
-        pcl = self.getPositive(idx)
+        pcl = self.getPositive(idx,cached=self.cache_pcl)
         if self.tuple_type=='triplet':
             neg = self.getNegative(idx,img)
             return img, pcl, neg
