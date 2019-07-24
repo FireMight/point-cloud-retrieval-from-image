@@ -123,7 +123,7 @@ class OxfordRobotcarDataset(Dataset):
         print('Query KDTree for {} closest descriptors'.format(k_max))
         
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
-        indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim]
+        indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim[0]]
         
         # Get most similar pcl that is not within minimum distance
         seg_idx_anchor = self.metadata[idx]['seg_idx']
