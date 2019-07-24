@@ -53,11 +53,11 @@ class OxfordRobotcarDataset(Dataset):
     def __getitem__(self,idx):        
         img = self._get_anchor(idx)
         pcl = self._get_positive(idx)
+        neg = None
         if self.tuple_type=='triplet':
             neg = self._get_negative(idx)
-            return img, pcl, neg
         
-        return img, pcl
+        return img, pcl, neg
     
     def map_indices(self, train_indices, val_indices, test_indices):
         self.seg_indices['train'] = train_indices
