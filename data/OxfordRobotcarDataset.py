@@ -95,7 +95,7 @@ class OxfordRobotcarDataset(Dataset):
     def _get_anchor(self,idx):
         img_name = os.path.join(self.img_dir,'img_20_'+str(self.metadata[idx]['seg_idx'])+'.png')
         img_file = Image.open(img_name)
-        img = tv.transforms.Compose([tv.transforms.ToTensor(),tv.transforms.Normalize([255/2]*3,[255/2]*3)])(img_file)
+        img = tv.transforms.ToTensor()(img_file)
         img = img.to(self.device)
         img_file.close()
         return img
