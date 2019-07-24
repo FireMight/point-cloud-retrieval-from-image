@@ -76,10 +76,11 @@ class OxfordRobotcarDataset(Dataset):
         else:
             self.tuple_type = 'simple'
             
-    def get_center_pos(self, idx):
-        return np.array([self.metadata[idx]['northing_center'],
-                         self.metadata[idx]['easting_center'],
-                         self.metadata[idx]['down_center']])
+    def get_center_pos(self, subset, idx):
+        seg_idx = self.seg_indices[subset][idx]
+        return np.array([self.metadata[seg_idx]['northing_center'],
+                         self.metadata[seg_idx]['easting_center'],
+                         self.metadata[seg_idx]['down_center']])
     
     def _get_anchor(self,idx):
         img_name = os.path.join(self.img_dir,'img_20_'+str(idx)+'.png')
