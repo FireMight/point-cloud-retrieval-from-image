@@ -45,11 +45,19 @@ class OxfordRobotcarDataset(Dataset):
         self.tuple_type = 'simple'
         self.img_descs = []
         self.pcl_descs = []
-        self.desc_tree = None
-                
+        self.desc_tree = None            
         
     def __len__(self):
         return len(self.metadata)
+    
+    def __getitem__(self,idx):        
+        img = self._get_anchor(idx)
+        pcl = self._get_positive(idx)
+        if self.tuple_type=='triplet':
+            neg = self._get_negative(idx)
+            return img, pcl, neg
+        
+        return img, pcl
     
     def map_indices(self, train_indices, val_indices, test_indices):
         self.seg_indices['train'] = train_indices
@@ -68,22 +76,26 @@ class OxfordRobotcarDataset(Dataset):
         else:
             self.tuple_type = 'simple'
             
+    def get_center_pos(self, idx):
+        return np.array([self.metadata[idx]['northing_center'],
+                         self.metadata[idx]['easting_center'],
+                         self.metadata[idx]['down_center']])
     
-    def getAnchor(self,idx):
-        img_name = os.path.join(self.img_dir,'img_20_'+str(self.indices[idx])+'.png')
+    def _get_anchor(self,idx):
+        img_name = os.path.join(self.img_dir,'img_20_'+str(idx)+'.png')
         img_file = Image.open(img_name)
         img = tv.transforms.Compose([tv.transforms.ToTensor(),tv.transforms.Normalize([255/2]*3,[255/2]*3)])(img_file)
         img = img.to(self.device)
         img_file.close()
         return img
     
-    def getPositive(self,idx):
-        pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.indices[idx])+'.rawpcl.processed')
+    def _get_positive(self,idx):
+        pcl_name = os.path.join(self.pcl_dir,'submap_'+str(idx)+'.rawpcl.processed')
         pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,4096)
         pcl = torch.from_numpy(pcl).to(self.device)
         return pcl
     
-    def getNegative(self,idx_anchor,anchor, d_min=50.0):
+    def _get_negative(self,idx_anchor, d_min=50.0):
         # Find most similar pcl descriptor indices
         desc_anchor = self.img_descs[idx_anchor]
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
@@ -102,19 +114,5 @@ class OxfordRobotcarDataset(Dataset):
         # Return stored pointcloud descriptor
         assert idx_sim > -1
         return self.pcl_descs[idx_sim]
- 
-    def getCenterPos(self, idx):
-        return np.array([self.metadata[idx]['northing_center'],
-                         self.metadata[idx]['easting_center'],
-                         self.metadata[idx]['down_center']])
             
-
-    def __getitem__(self,idx):        
-        img = self.getAnchor(idx)
-        pcl = self.getPositive(idx)
-        if self.tuple_type=='triplet':
-            neg = self.getNegative(idx,img)
-            return img, pcl, neg
-        
-        return img, pcl
     
