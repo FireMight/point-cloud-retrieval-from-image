@@ -8,3 +8,6 @@
 [submodule "pointnet.pytorch"]
 	path = pointnet
 	url = https://github.com/fxia22/pointnet.pytorch.git
+[submodule "pointnetvlad"]
+	path = pointnetvlad
+	url = https://github.com/catta202000/PointNetVlad-Pytorch.git

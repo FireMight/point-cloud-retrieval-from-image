@@ -17,11 +17,13 @@ class OxfordRobotcarDataset(Dataset):
        potentially a negative submap.
     """
     
-    def __init__(self, pcl_dir, img_dir, device):
+    def __init__(self, pcl_dir, img_dir, device, tuple_type='triplet', use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
         self.img_dir = img_dir
         self.device = device
         self.metadata = []
+        self.use_pn_vlad = use_pn_vlad
+        self.cache_pcl = cache_pcl
         self.seg_indices = {}
         with open(pcl_dir+'metadata.csv') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -40,20 +42,28 @@ class OxfordRobotcarDataset(Dataset):
                 metadata['heading_center'] = float(row['heading_center'])
                 
                 self.metadata.append(metadata)
-        
+                # cache pcls in RAM, low memory usage - 10000 pcls would take up about 0.5 GB
+        if self.cache_pcl:
+            self._init_pcl_cache()
+
         # Placeholder for descriptor NN search when using triplet loss
-        self.tuple_type = 'simple'
+        self.tuple_type = tuple_type
         self.img_descs = []
         self.pcl_descs = []
-        self.desc_tree = None            
+        self.desc_tree = None 
+            
+    def _init_pcl_cache(self):
+        self.pcl_cache = [None]*self.__len__()
+        for i in range(self.__len__()):
+            self.pcl_cache[i] = self._get_positive(i)
         
     def __len__(self):
         return len(self.metadata)
     
     def __getitem__(self,idx):        
         img = self._get_anchor(idx)
-        pcl = self._get_positive(idx)
-        neg = None
+        pcl = self._get_positive(idx,self.cache_pcl)
+	neg = None
         if self.tuple_type=='triplet':
             neg = self._get_negative(idx)
         
@@ -83,24 +93,30 @@ class OxfordRobotcarDataset(Dataset):
                          self.metadata[seg_idx]['down_center']])
     
     def _get_anchor(self,idx):
-        img_name = os.path.join(self.img_dir,'img_20_'+str(idx)+'.png')
+        img_name = os.path.join(self.img_dir,'img_20_'+str(self.metadata[idx]['seg_idx'])+'.png')
         img_file = Image.open(img_name)
         img = tv.transforms.Compose([tv.transforms.ToTensor(),tv.transforms.Normalize([255/2]*3,[255/2]*3)])(img_file)
         img = img.to(self.device)
         img_file.close()
         return img
     
-    def _get_positive(self,idx):
-        pcl_name = os.path.join(self.pcl_dir,'submap_'+str(idx)+'.rawpcl.processed')
-        pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,4096)
-        pcl = torch.from_numpy(pcl).to(self.device)
-        return pcl
-    
+    def _get_positive(self,idx,cached=False):
+        if cached:
+            return self.pcl_cache[idx]
+        else:    
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.metadata[idx]['seg_idx'])+'.rawpcl.processed')
+            pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
+            if self.use_pn_vlad:
+                pcl = pcl.transpose()
+                pcl = pcl.reshape(1,-1,3)
+            pcl = torch.from_numpy(pcl).to(self.device)
+            return pcl
+                
     def _get_negative(self,idx_anchor, d_min=50.0):
         # Find most similar pcl descriptor indices
         desc_anchor = self.img_descs[idx_anchor]
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
-        _, indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True)
+        indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
         
         # Get most similar pcl that is not within minimum distance
         seg_idx_anchor = self.indices['train'][idx_anchor]
