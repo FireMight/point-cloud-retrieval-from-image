@@ -49,9 +49,10 @@ class OxfordRobotcarDataset(Dataset):
     
     def getAnchor(self,idx):
         img_name = os.path.join(self.img_dir,'img_20_'+str(self.indices[idx])+'.png')
-        img = Image.open(img_name)
-        img = tv.transforms.ToTensor()(img)
+        img_file = Image.open(img_name)
+        img = tv.transforms.Compose([tv.transforms.ToTensor(),tv.transforms.Normalize([255/2]*3,[255/2]*3)])(img_file)
         img = img.to(self.device)
+        img_file.close()
         return img
     
     def getPositive(self,idx):
