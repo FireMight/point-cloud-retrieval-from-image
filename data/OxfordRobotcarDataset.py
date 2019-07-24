@@ -75,7 +75,9 @@ class OxfordRobotcarDataset(Dataset):
         for idx, img_desc, pcl_desc in zip(indices, img_descs, pcl_descs):
             self.img_descs[idx] = img_desc
             self.pcl_descs[idx] = pcl_desc
-            self.index_mapping.append(idx)            
+            self.index_mapping.append(idx) 
+            
+        print('Build KDTree with {} elements'.format(len(self.index_mapping)))           
         
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
@@ -117,6 +119,9 @@ class OxfordRobotcarDataset(Dataset):
         desc_anchor = self.img_descs[idx]
         assert desc_anchor is not None
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
+        
+        print('Query KDTree for {} closest descriptors'.format(k_max))
+        
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
         indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim]
         
