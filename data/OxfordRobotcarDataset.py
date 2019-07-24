@@ -66,7 +66,7 @@ class OxfordRobotcarDataset(Dataset):
         pcl = self._get_positive(idx,self.cache_pcl)
         neg = torch.Tensor()
         if self.tuple_type=='triplet':
-            neg = self._get_negative(idx)
+            neg = self._get_negative(idx,self.cache_pcl)
         
         return idx, img, pcl, neg
         
@@ -76,9 +76,7 @@ class OxfordRobotcarDataset(Dataset):
             self.img_descs[idx] = img_desc
             self.pcl_descs[idx] = pcl_desc
             self.index_mapping.append(idx) 
-            
-        print('Build KDTree with {} elements'.format(len(self.index_mapping)))           
-        
+                    
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
         
@@ -114,14 +112,12 @@ class OxfordRobotcarDataset(Dataset):
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
                 
-    def _get_negative(self,idx, d_min=5.0):
+    def _get_negative(self,idx, d_min=5.0,cached=False):
         # Find most similar pcl descriptor indices
         desc_anchor = self.img_descs[idx]
         assert desc_anchor is not None
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
-        
-        print('Query KDTree for {} closest descriptors'.format(k_max))
-        
+                
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
         indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim[0]]
         
@@ -137,7 +133,16 @@ class OxfordRobotcarDataset(Dataset):
             
         # Return stored pointcloud descriptor
         assert idx_sim > -1
-        assert self.pcl_descs[idx_sim] is not None
-        return self.pcl_descs[idx_sim]
+        
+        if cached:
+            return self.pcl_cache[idx_sim]
+        else:    
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.metadata[idx_sim]['seg_idx'])+'.rawpcl.processed')
+            pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
+            if self.use_pn_vlad:
+                pcl = pcl.transpose()
+                pcl = pcl.reshape(1,-1,3)
+            pcl = torch.from_numpy(pcl).to(self.device)
+            return pcl
             
     
