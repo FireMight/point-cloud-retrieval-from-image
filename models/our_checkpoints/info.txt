@@ -1,0 +1,3 @@
+checkpoint will be stored here during training
+- latest.tar is the checkpoint of the configuration after the last epoch of training
+- best.tar is the checkpoint whch had lowest validation loss
