@@ -112,7 +112,7 @@ class OxfordRobotcarDataset(Dataset):
         # Find most similar pcl descriptor indices
         desc_anchor = self.img_descs[idx]
         assert desc_anchor is not None
-        d_min = min(d_min, len(self.index_mapping)-2)
+        d_min = min(d_min, len(self.index_mapping) // 2 - 2)
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
                 
         indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=False)
