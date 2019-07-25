@@ -127,7 +127,8 @@ class OxfordRobotcarDataset(Dataset):
         
         idx_sim = -1
         for i, seg_idx_sim in enumerate(seg_indices_sim):
-            if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
+            #if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
+            if True: # Hack for testing
                 idx_sim = indices_sim[i]
                 break
             
