@@ -75,7 +75,9 @@ class OxfordRobotcarDataset(Dataset):
         for idx, img_desc, pcl_desc in zip(indices, img_descs, pcl_descs):
             self.img_descs[idx] = img_desc
             self.pcl_descs[idx] = pcl_desc
-            self.index_mapping.append(idx) 
+            self.index_mapping.append(idx)
+            
+        print('Added {} descriptors to kd Tree'.format(len(self.index_mapping))) 
                     
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
@@ -120,7 +122,8 @@ class OxfordRobotcarDataset(Dataset):
         seg_idx_anchor = self.metadata[idx]['seg_idx']
         seg_indices_sim = [self.metadata[idx_sim]['seg_idx'] for idx_sim in indices_sim]
         
-        print('Get negative for idx {} seg {}'.format(idx, seg_idx_anchor))
+        print('Get negative for idx {} seg {} d_min {} k_max {}'.format(idx, seg_idx_anchor,
+                                                                        d_min, k_max))
         print(seg_indices_sim)
         
         
