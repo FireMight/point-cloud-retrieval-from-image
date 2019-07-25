@@ -120,11 +120,17 @@ class OxfordRobotcarDataset(Dataset):
         seg_idx_anchor = self.metadata[idx]['seg_idx']
         seg_indices_sim = [self.metadata[idx_sim]['seg_idx'] for idx_sim in indices_sim]
         
+        print('Get negative for idx {} seg {}'.format(idx, seg_idx_anchor))
+        print(seg_indices_sim)
+        
+        
         idx_sim = -1
         for i, seg_idx_sim in enumerate(seg_indices_sim):
             if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
                 idx_sim = indices_sim[i]
                 break
+            
+        print('Chose idx {} seg {}'.format(idx_sim, self.metadata[idx_sim]['seg_idx']))
             
         # Return stored pointcloud descriptor
         assert idx_sim > -1
