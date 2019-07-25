@@ -66,7 +66,7 @@ class OxfordRobotcarDataset(Dataset):
         pcl = self._get_positive(idx,self.cache_pcl)
         neg = torch.Tensor()
         if self.use_triplet:
-            neg = self._get_negative(idx,self.cache_pcl)
+            neg = self._get_negative(idx,cached=self.cache_pcl)
         
         return idx, img, pcl, neg
         
