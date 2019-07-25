@@ -76,7 +76,7 @@ class OxfordRobotcarDataset(Dataset):
             self.img_descs[idx] = img_desc
             self.pcl_descs[idx] = pcl_desc
             self.index_mapping.append(idx)
-                                
+                       
         leaf_size = int(img_descs.shape[0] / 10)
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
             
@@ -127,8 +127,7 @@ class OxfordRobotcarDataset(Dataset):
         
         idx_sim = -1
         for i, seg_idx_sim in enumerate(seg_indices_sim):
-            #if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
-            if True: # Hack for testing
+            if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
                 idx_sim = indices_sim[i]
                 break
             
