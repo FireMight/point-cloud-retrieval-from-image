@@ -81,15 +81,15 @@ class OxfordRobotcarDataset(Dataset):
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
             
     def get_center_pos(self, idx):
-        seg_idx = self.metadata[idx]['seg_idx']
-        return np.array([self.metadata[seg_idx]['northing_center'],
-                         self.metadata[seg_idx]['easting_center'],
-                         self.metadata[seg_idx]['down_center']])
+        #seg_idx = self.metadata[idx]['seg_idx']
+        return np.array([self.metadata[idx]['northing_center'],
+                         self.metadata[idx]['easting_center'],
+                         self.metadata[idx]['down_center']])
     
     def _get_anchor(self,idx):
         img_name = os.path.join(self.img_dir,'img_20_'+str(self.metadata[idx]['seg_idx'])+'.png')
         img_file = Image.open(img_name)
-        img = tv.transforms.Compose([tv.transforms.ToTensor(),tv.transforms.Normalize([255/2]*3,[255/2]*3)])(img_file)
+        img = tv.transforms.ToTensor()(img_file)
         img = img.to(self.device)
         img_file.close()
         return img
@@ -145,5 +145,3 @@ class OxfordRobotcarDataset(Dataset):
                 pcl = pcl.reshape(1,-1,3)
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
-            
-    
