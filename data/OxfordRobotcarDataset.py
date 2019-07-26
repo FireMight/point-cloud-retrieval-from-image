@@ -113,7 +113,7 @@ class OxfordRobotcarDataset(Dataset):
         d_min = min(d_min, len(self.index_mapping) // 2 - 2)
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
                 
-        indices_sim, distances = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=True)
+        distances, indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=True)
         indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim[0]]
         
         # Get most similar pcl that is not within minimum distance
