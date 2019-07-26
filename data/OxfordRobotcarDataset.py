@@ -122,8 +122,9 @@ class OxfordRobotcarDataset(Dataset):
         
         print('Get negative for idx {} seg {} d_min {} k_max {}'.format(idx, seg_idx_anchor,
                                                                         d_min, k_max))
-        print(distances)
-        #print(seg_indices_sim)
+        print(distances[:5])
+        print(indices_sim[:5])
+        print(seg_indices_sim[:5])
         
         
         idx_sim = -1
