@@ -77,7 +77,7 @@ class OxfordRobotcarDataset(Dataset):
             self.pcl_descs[idx] = pcl_desc
             self.index_mapping.append(idx)
                        
-        leaf_size = int(img_descs.shape[0] / 10)
+        leaf_size = max(1, int(img_descs.shape[0] / 10))
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
             
     def get_center_pos(self, idx):
