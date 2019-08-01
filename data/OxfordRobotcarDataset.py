@@ -61,7 +61,7 @@ class OxfordRobotcarDataset(Dataset):
     def __len__(self):
         return len(self.metadata)
     
-    def __getitem__(self,idx):        
+    def __getitem__(self,idx):
         img = self._get_anchor(idx)
         pcl = self._get_positive(idx,self.cache_pcl)
         neg = torch.Tensor()
@@ -120,8 +120,9 @@ class OxfordRobotcarDataset(Dataset):
         seg_idx_anchor = self.metadata[idx]['seg_idx']
         seg_indices_sim = [self.metadata[idx_sim]['seg_idx'] for idx_sim in indices_sim]
         
-        #print('Get negative for idx {} seg {} d_min {} k_max {}'.format(idx, seg_idx_anchor,
-         #                                                               d_min, k_max))
+        print('Get negative for idx',idx)
+        print(indices_sim)
+        print(distances)
         
         
         idx_sim = -1
@@ -130,7 +131,7 @@ class OxfordRobotcarDataset(Dataset):
                 idx_sim = indices_sim[i]
                 break
             
-        #print('Chose idx {} seg {}'.format(idx_sim, self.metadata[idx_sim]['seg_idx']))
+        print('Result: idx_sim',idx_sim)
             
         # Return stored pointcloud descriptor
         assert idx_sim > -1
