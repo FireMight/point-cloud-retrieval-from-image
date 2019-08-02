@@ -15,11 +15,14 @@ class OxfordRobotcarDataset(Dataset):
     """A custom dataset that loads an anchor image 
        and the corresponding point cloud submap and 
        potentially a negative submap.
+       
+       Assumes that all images and pointcloud files are eumerated consistently
+       
     """
     
-    def __init__(self, pcl_dir, img_dir, device, use_triplet=False, use_pn_vlad=False, cache_pcl=True):
+    def __init__(self, pcl_dir, img_dirs, device, use_triplet=False, use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
-        self.img_dir = img_dir
+        self.img_dirs = img_dirs
         self.device = device
         self.metadata = []
         self.use_pn_vlad = use_pn_vlad
@@ -42,63 +45,95 @@ class OxfordRobotcarDataset(Dataset):
                 metadata['heading_center'] = float(row['heading_center'])
                 
                 self.metadata.append(metadata)
-                # cache pcls in RAM, low memory usage - 10000 pcls would take up about 0.5 GB
+                
+        
+        # Get minimum number of submaps if different image dirs have varying 
+        # number of elements
+        num_per_dir = []
+        for img_dir in self.img_dirs:
+            with open(img_dir+'metadata.csv') as csvfile:
+                reader = csv.DictReader(csvfile)
+                num_per_dir.append(len(reader))
+                    
+        self.num_pcl = min(num_per_dir)
+        self.num_img = len(self.img_dirs) * self.num_pcl
+        
+        assert self.num_pcl <= len(self.metadata)
+
+
+        # cache pcls in RAM, low memory usage - 10000 pcls would take up about 0.5 GB
         if self.cache_pcl:
             self._init_pcl_cache()
 
         # Placeholder for descriptor NN search when using triplet loss
         self.use_triplet = use_triplet
-        self.img_descs = [None for _ in range(len(self.metadata))]
-        self.pcl_descs = [None for _ in range(len(self.metadata))]
+        self.img_descs = [None for _ in range(self.num_img)]
+        self.pcl_descs = [None for _ in range(self.num_pcl)]
         self.index_mapping = [] # Holds idx for every descriptor in the tree
         self.desc_tree = None 
             
     def _init_pcl_cache(self):
-        self.pcl_cache = [None]*self.__len__()
-        for i in range(self.__len__()):
+        self.pcl_cache = [None]*self.num_pcl
+        for i in range(self.num_pcl):
             self.pcl_cache[i] = self._get_positive(i)
         
     def __len__(self):
-        return len(self.metadata)
+        return self.num_img
     
-    def __getitem__(self,idx):
-        img = self._get_anchor(idx)
-        pcl = self._get_positive(idx,self.cache_pcl)
+    def __getitem__(self,img_idx):
+        img = self._get_anchor(img_idx)
+        pcl = self._get_positive(img_idx,self.cache_pcl)
         neg = torch.Tensor()
         if self.use_triplet:
-            neg = self._get_negative(idx,cached=self.cache_pcl)
+            neg = self._get_negative(img_idx,cached=self.cache_pcl)
         
-        return idx, img, pcl, neg
+        return img_idx, img, pcl, neg
         
-    def update_train_descriptors(self, indices, img_descs, pcl_descs):
+    def update_train_descriptors(self, img_indices, img_descs, pcl_descs):
         self.index_mapping = []
-        for idx, img_desc, pcl_desc in zip(indices, img_descs, pcl_descs):
-            self.img_descs[idx] = img_desc
-            self.pcl_descs[idx] = pcl_desc
-            self.index_mapping.append(idx)
+        for img_idx, img_desc, pcl_desc in zip(img_indices, img_descs, pcl_descs):
+            self.img_descs[img_idx] = img_desc
+            
+            pcl_idx = self._img_idx_to_img_dir(img_idx)
+            self.pcl_descs[pcl_idx] = pcl_desc
+            self.index_mapping.append(pcl_idx)
                        
         leaf_size = max(1, int(img_descs.shape[0] / 10))
         self.kd_tree = KDTree(pcl_descs, leaf_size=leaf_size, metric='euclidean')
             
-    def get_center_pos(self, idx):
-        #seg_idx = self.metadata[idx]['seg_idx']
-        return np.array([self.metadata[idx]['northing_center'],
-                         self.metadata[idx]['easting_center'],
-                         self.metadata[idx]['down_center']])
+    def get_center_pos(self, img_idx):
+        pcl_idx = self._img_to_pcl_idx(img_idx)
+        return np.array([self.metadata[pcl_idx]['northing_center'],
+                         self.metadata[pcl_idx]['easting_center'],
+                         self.metadata[pcl_idx]['down_center']])
     
-    def _get_anchor(self,idx):
-        img_name = os.path.join(self.img_dir,'img_20_'+str(self.metadata[idx]['seg_idx'])+'.png')
+    def _img_to_pcl_idx(self, img_idx):
+        return img_idx % self.num_pcl
+    
+    def _img_idx_to_img_dir(self, img_idx):
+        return self.img_dirs[img_idx//self.num_pcl]
+    
+    def _get_anchor(self,img_idx):
+        pcl_idx = self._img_to_pcl_idx(img_idx)
+        seg_idx = self.metadata[pcl_idx]['seg_idx']
+        
+        img_dir = self._img_idx_to_img_dir(img_idx)
+        
+        img_name = os.path.join(img_dir,'img_20_'+str(seg_idx)+'.png')
         img_file = Image.open(img_name)
         img = tv.transforms.ToTensor()(img_file)
         img = img.to(self.device)
         img_file.close()
         return img
     
-    def _get_positive(self,idx,cached=False):
+    def _get_positive(self,img_idx,cached=False):
+        pcl_idx = self._img_to_pcl_idx(img_idx)
+        
         if cached:
-            return self.pcl_cache[idx]
+            return self.pcl_cache[pcl_idx]
         else:    
-            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.metadata[idx]['seg_idx'])+'.rawpcl.processed')
+            seg_idx = self.metadata[pcl_idx]['seg_idx']
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(seg_idx)+'.rawpcl.processed')
             pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
             if self.use_pn_vlad:
                 pcl = pcl.transpose()
@@ -106,40 +141,43 @@ class OxfordRobotcarDataset(Dataset):
             pcl = torch.from_numpy(pcl).to(self.device)
             return pcl
                 
-    def _get_negative(self,idx, d_min=50.0,cached=False):
+    def _get_negative(self,img_idx, d_min=50.0,cached=False):
         # Find most similar pcl descriptor indices
-        desc_anchor = self.img_descs[idx]
+        desc_anchor = self.img_descs[img_idx]
         assert desc_anchor is not None
         d_min = min(d_min, len(self.index_mapping) // 2 - 2)
         k_max = int(2*d_min) + 2 # make sure there are at least 2 descriptors not within d_min
                 
-        distances, indices_sim = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max , sort_results=True, return_distance=True)
-        indices_sim = [self.index_mapping[idx_sim] for idx_sim in indices_sim[0]]
+        nearest = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max, 
+                                     sort_results=True, return_distance=False)
+        pcl_indices_sim = [self.index_mapping[i] for i in nearest]
         
         # Get most similar pcl that is not within minimum distance
-        seg_idx_anchor = self.metadata[idx]['seg_idx']
-        seg_indices_sim = [self.metadata[idx_sim]['seg_idx'] for idx_sim in indices_sim]
+        pcl_idx_anchor = self._img_to_pcl_idx(img_idx)
+        seg_idx_anchor = self.metadata[pcl_idx_anchor]['seg_idx']
+        seg_indices_sim = [self.metadata[pcl_idx_sim]['seg_idx'] for pcl_idx_sim in pcl_indices_sim]
         
         #print('Get negative for idx',idx)
         #print(indices_sim)
         #print(distances)
         
         
-        idx_sim = -1
+        pcl_idx_sim = -1
         for i, seg_idx_sim in enumerate(seg_indices_sim):
             if abs(seg_idx_sim - seg_idx_anchor) > int(d_min):
-                idx_sim = indices_sim[i]
+                pcl_idx_sim = pcl_indices_sim[i]
                 break
             
         #print('Result: idx_sim',idx_sim)
             
         # Return stored pointcloud descriptor
-        assert idx_sim > -1
+        assert pcl_idx_sim > -1
         
         if cached:
-            return self.pcl_cache[idx_sim]
+            return self.pcl_cache[pcl_idx_sim]
         else:    
-            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(self.metadata[idx_sim]['seg_idx'])+'.rawpcl.processed')
+            seg_idx_sim = self.metadata[pcl_idx_sim]['seg_idx']
+            pcl_name = os.path.join(self.pcl_dir,'submap_'+str(seg_idx_sim)+'.rawpcl.processed')
             pcl = np.fromfile(pcl_name,dtype=np.float32).reshape(3,-1)
             if self.use_pn_vlad:
                 pcl = pcl.transpose()
