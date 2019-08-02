@@ -97,7 +97,7 @@ class OxfordRobotcarDataset(Dataset):
         for img_idx, img_desc, pcl_desc in zip(img_indices, img_descs, pcl_descs):
             self.img_descs[img_idx] = img_desc
             
-            pcl_idx = self._img_idx_to_img_dir(img_idx)
+            pcl_idx = self._img_to_pcl_idx(img_idx)
             self.pcl_descs[pcl_idx] = pcl_desc
             self.index_mapping.append(pcl_idx)
                        
