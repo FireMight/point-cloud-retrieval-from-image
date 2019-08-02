@@ -53,7 +53,10 @@ class OxfordRobotcarDataset(Dataset):
         for img_dir in self.img_dirs:
             with open(img_dir+'metadata.csv') as csvfile:
                 reader = csv.DictReader(csvfile)
-                num_per_dir.append(len(reader))
+                cnt = 0
+                for _ in reader:
+                    cnt += 1
+                num_per_dir.append(cnt)
                     
         self.num_pcl = min(num_per_dir)
         self.num_img = len(self.img_dirs) * self.num_pcl
