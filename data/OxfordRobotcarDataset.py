@@ -153,7 +153,7 @@ class OxfordRobotcarDataset(Dataset):
                 
         nearest = self.kd_tree.query(desc_anchor.reshape(1, -1), k=k_max, 
                                      sort_results=True, return_distance=False)
-        pcl_indices_sim = [self.index_mapping[i] for i in nearest]
+        pcl_indices_sim = [self.index_mapping[i] for i in nearest[0]]
         
         # Get most similar pcl that is not within minimum distance
         pcl_idx_anchor = self._img_to_pcl_idx(img_idx)
