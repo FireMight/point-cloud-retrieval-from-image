@@ -20,7 +20,8 @@ class OxfordRobotcarDataset(Dataset):
        
     """
     
-    def __init__(self, pcl_dir, img_dirs, device, use_triplet=False, use_pn_vlad=False, cache_pcl=True):
+    def __init__(self, pcl_dir, img_dirs, device, use_triplet=False, 
+                 use_pn_vlad=False, cache_pcl=True):
         self.pcl_dir = pcl_dir
         self.img_dirs = img_dirs
         self.device = device
